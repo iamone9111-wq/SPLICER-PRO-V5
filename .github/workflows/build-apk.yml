@@ -1,0 +1,64 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.7'
+        cache-disabled: true
+
+    - name: Accept Android SDK Licenses
+      run: |
+        yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+    - name: Build Debug APK
+      run: |
+        echo "=== Repository file listing ==="
+        ls -la
+
+        # Search recursively for Android project root containing settings.gradle or build.gradle
+        TARGET_DIR=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" -o -name "build.gradle.kts" -o -name "build.gradle" | grep -v "/app/build" | head -n 1 | xargs dirname 2>/dev/null || true)
+
+        if [ -n "$TARGET_DIR" ] && [ -d "$TARGET_DIR" ]; then
+          echo "Found Android project at: $TARGET_DIR"
+          cd "$TARGET_DIR"
+        else
+          echo "No settings.gradle found in repo root. Checking tree..."
+          find . -maxdepth 3
+        fi
+
+        # Generate gradle wrapper
+        gradle wrapper --gradle-version 8.7
+        chmod +x gradlew
+
+        ./gradlew assembleDebug --stacktrace --no-daemon --no-build-cache
+
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: VideoWall-Splicer-Debug-APK
+        path: '**/app/build/outputs/apk/debug/*.apk'
+        if-no-files-found: warn
+        retention-days: 30
+

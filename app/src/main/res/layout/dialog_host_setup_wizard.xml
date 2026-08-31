@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#0F172A"
+    android:padding="20dp">
+
+    <!-- Header & Step Indicator -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="16dp">
+        
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@android:drawable/ic_menu_crop"
+            app:tint="#6366F1" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="12dp">
+            
+            <TextView
+                android:id="@+id/tvStepTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Step 1: Screen Count"
+                android:textColor="#F8FAFC"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvStepDesc"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="How many screens are connected to this video wall?"
+                android:textColor="#94A3B8"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvStepCounter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 / 4"
+            android:textColor="#818CF8"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:background="#1E293B"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#334155"
+        android:layout_marginBottom="16dp" />
+
+    <!-- STEP 1 CONTAINER: SCREEN COUNT -->
+    <LinearLayout
+        android:id="@+id/step1Container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Select Total Screens (including this Host device):"
+            android:textColor="#CBD5E1"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:background="#1E293B"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <Button
+                android:id="@+id/btnRemoveScreen"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:text="-"
+                android:textSize="22sp"
+                android:backgroundTint="#334155" />
+
+            <TextView
+                android:id="@+id/tvScreenCount"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="3 Screens"
+                android:textColor="#F8FAFC"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnAddScreen"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:text="+"
+                android:textSize="22sp"
+                android:backgroundTint="#6366F1" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvDetectedClientsNotice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🟢 Connected Client Devices: 2 found"
+            android:textColor="#10B981"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+    </LinearLayout>
+
+    <!-- STEP 2 CONTAINER: SPLICING ORIENTATION -->
+    <LinearLayout
+        android:id="@+id/step2Container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Choose how you want to divide &amp; slice the video:"
+            android:textColor="#CBD5E1"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <RadioGroup
+            android:id="@+id/rgOrientation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/rbHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Horizontal Strip (1 × N Side-by-Side Panoramic)"
+                android:textColor="#F8FAFC"
+                android:checked="true"
+                android:padding="8dp"
+                android:layout_marginBottom="8dp" />
+
+            <RadioButton
+                android:id="@+id/rbVertical"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Vertical Totem (N × 1 Top-to-Bottom Pillar)"
+                android:textColor="#F8FAFC"
+                android:padding="8dp"
+                android:layout_marginBottom="8dp" />
+
+            <RadioButton
+                android:id="@+id/rbGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="2D Matrix Grid (Custom Rows × Columns)"
+                android:textColor="#F8FAFC"
+                android:padding="8dp"
+                android:layout_marginBottom="8dp" />
+        </RadioGroup>
+    </LinearLayout>
+
+    <!-- STEP 3 CONTAINER: PHYSICAL SCREEN ARRANGEMENT -->
+    <LinearLayout
+        android:id="@+id/step3Container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Physical Screen Arrangement &amp; Positioning:"
+            android:textColor="#CBD5E1"
+            android:textSize="13sp"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tvArrangementSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Slot 1 (Left) -> Host\nSlot 2 (Center) -> Client 1\nSlot 3 (Right) -> Client 2"
+            android:textColor="#94A3B8"
+            android:background="#1E293B"
+            android:padding="12dp"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btnIdentifyScreens"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚡ Identify &amp; Flash All Screens"
+            android:backgroundTint="#0EA5E9"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <!-- STEP 4 CONTAINER: ASPECT RATIO & FIT -->
+    <LinearLayout
+        android:id="@+id/step4Container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Select Video Fit &amp; Splicing Mode:"
+            android:textColor="#CBD5E1"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <RadioGroup
+            android:id="@+id/rgScaleMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/rbCover"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Cover / Full Bleed (No Black Borders across wall)"
+                android:textColor="#F8FAFC"
+                android:checked="true"
+                android:padding="8dp" />
+
+            <RadioButton
+                android:id="@+id/rbContain"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Contain / Letterbox (Preserve 100% of video content)"
+                android:textColor="#F8FAFC"
+                android:padding="8dp" />
+
+            <RadioButton
+                android:id="@+id/rbStretch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Stretch / Fill Canvas (Stretches across all displays)"
+                android:textColor="#F8FAFC"
+                android:padding="8dp" />
+        </RadioGroup>
+    </LinearLayout>
+
+    <!-- Navigation Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="20dp">
+
+        <Button
+            android:id="@+id/btnBack"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="Cancel"
+            android:backgroundTint="#334155"
+            android:textColor="#E2E8F0"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/btnNext"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="Next Step"
+            android:backgroundTint="#6366F1"
+            android:textColor="#FFFFFF"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+
+</LinearLayout>

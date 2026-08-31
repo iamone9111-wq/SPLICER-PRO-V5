@@ -1,0 +1,6 @@
+{
+  "name": "SPLICER PRO",
+  "description": "Multi-device synchronized video wall & screen splicing studio for Android and Web.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

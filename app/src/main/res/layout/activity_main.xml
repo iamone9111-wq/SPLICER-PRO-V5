@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#050811">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:gravity="center_horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SPLICER PRO"
+            android:textColor="#F8FAFC"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.05"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Multi-Device Video Wall &amp; Screen Splicing Studio"
+            android:textColor="#818CF8"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Choose your role to start or join a multi-device video wall"
+            android:textColor="#94A3B8"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Role Option 1: Host -->
+        <LinearLayout
+            android:id="@+id/btnHostCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#0F172A"
+            android:padding="18dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="👑 I am a Host (Master)"
+                android:textColor="#818CF8"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Create video wall, load local video, configure multi-screen matrix, and broadcast synchronization to all client phones."
+                android:textColor="#CBD5E1"
+                android:textSize="12sp"
+                android:layout_marginBottom="12dp" />
+
+            <Button
+                android:id="@+id/btnHost"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Select Host Master"
+                android:backgroundTint="#5850EC"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <!-- Role Option 2: Join Screen -->
+        <LinearLayout
+            android:id="@+id/btnJoinCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#0F172A"
+            android:padding="18dp"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📱 Join Screen (Client)"
+                android:textColor="#34D399"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Connect this phone to the Host to display sliced video. Both phones must be on the same Wi-Fi or Hotspot."
+                android:textColor="#CBD5E1"
+                android:textSize="12sp"
+                android:layout_marginBottom="10dp" />
+
+            <!-- Auto-Discovery Status Badge -->
+            <TextView
+                android:id="@+id/tvAutoDiscoveryStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🔍 Searching for Host on local network..."
+                android:textColor="#38BDF8"
+                android:textSize="11sp"
+                android:background="#1E293B"
+                android:padding="8dp"
+                android:gravity="center"
+                android:layout_marginBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btnUseHotspotIp"
+                    android:layout_width="0dp"
+                    android:layout_height="38dp"
+                    android:layout_weight="1"
+                    android:text="⚡ Use Hotspot (192.168.43.1)"
+                    android:textSize="11sp"
+                    android:backgroundTint="#334155"
+                    android:textColor="#38BDF8"
+                    android:padding="0dp" />
+            </LinearLayout>
+
+            <EditText
+                android:id="@+id/inputHostIp"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:hint="Host IP (e.g. 192.168.43.1 or 192.168.1.x)"
+                android:textColor="#F8FAFC"
+                android:textColorHint="#64748B"
+                android:background="#1E293B"
+                android:paddingHorizontal="12dp"
+                android:inputType="textUri"
+                android:textSize="14sp"
+                android:layout_marginBottom="12dp"/>
+
+            <Button
+                android:id="@+id/btnJoin"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Join Video Wall"
+                android:backgroundTint="#10B981"
+                android:textColor="#FFFFFF"/>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
