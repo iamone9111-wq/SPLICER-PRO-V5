@@ -142,7 +142,7 @@ dependencies {
         <activity
             android:name=".ui.HostActivity"
             android:exported="false"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:keepScreenOn="true" />
 
@@ -151,7 +151,7 @@ dependencies {
             android:name=".ui.ClientActivity"
             android:exported="false"
             android:hardwareAccelerated="true"
-            android:screenOrientation="unspecified"
+            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:keepScreenOn="true"
             android:theme="@style/Theme.VideoWallSplicer.Fullscreen" />
@@ -170,7 +170,7 @@ dependencies {
     highlights: [
       'Sealed hierarchy for SyncMessage',
       'NTP 4-timestamp Ping/Pong',
-      'SchedulePlay with exact targetSystemTimeMs'
+      'SchedulePlay with exact targetSystemTimeMs and hostExecutionEpochMs'
     ],
     code: `package com.videowall.splicer.network
 
@@ -180,8 +180,16 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 enum class WallOrientation {
-    HORIZONTAL, // Landscape: screens arranged Left-to-Right
-    VERTICAL    // Portrait: screens arranged Top-to-Bottom
+    HORIZONTAL, // Landscape: 1 x N screens arranged Left-to-Right
+    VERTICAL,   // Portrait: N x 1 screens arranged Top-to-Bottom
+    GRID        // 2D Matrix: R x C custom screen grid
+}
+
+enum class ScaleMode {
+    COVER,      // Full bleed zoom, no black borders
+    CONTAIN,    // Entire video visible with letterbox/pillarbox
+    FIT,        // Alias for letterbox/pillarbox
+    STRETCH     // Stretches to fill total canvas
 }
 
 @Serializable
@@ -208,14 +216,39 @@ sealed class SyncMessage {
     ) : SyncMessage()
 
     /**
-     * Server assigns physical screen index and layout parameters to client.
+     * Server assigns dynamic physical screen coordinate and layout parameters to client.
      */
     @Serializable
     @SerialName("ASSIGN_ROLE")
     data class AssignRole(
         val deviceIndex: Int,
         val totalDevices: Int,
-        val orientation: WallOrientation
+        val orientation: WallOrientation = WallOrientation.HORIZONTAL,
+        val row: Int = 0,
+        val col: Int = 0,
+        val totalRows: Int = 1,
+        val totalCols: Int = 1,
+        val scaleMode: ScaleMode = ScaleMode.COVER,
+        val rotationDeg: Int = 0
+    ) : SyncMessage()
+
+    /**
+     * Flash screen ID overlay on screens to verify physical placement.
+     */
+    @Serializable
+    @SerialName("IDENTIFY")
+    data class Identify(
+        val targetDeviceIndex: Int = -1, // -1 means all screens
+        val displayIndex: Int = 1,
+        val durationMs: Long = 3000L
+    ) : SyncMessage()
+
+    @Serializable
+    @SerialName("IDENTIFY_SCREEN")
+    data class IdentifyScreen(
+        val targetDeviceIndex: Int = -1,
+        val displayIndex: Int = 1,
+        val flashDurationMs: Long = 3000L
     ) : SyncMessage()
 
     /**
@@ -225,20 +258,21 @@ sealed class SyncMessage {
     @SerialName("PREPARE_MEDIA")
     data class PrepareMedia(
         val mediaUri: String,
-        val videoWidth: Int,
-        val videoHeight: Int,
-        val durationMs: Long
+        val videoWidth: Int = 1920,
+        val videoHeight: Int = 1080,
+        val durationMs: Long = 0L
     ) : SyncMessage()
 
     /**
      * High-Precision Scheduled Play Command:
-     * Dispatches playback to start from [startPositionMs] at the exact [targetSystemTimeMs].
+     * Dispatches playback to start from [startPositionMs] at the exact [targetSystemTimeMs] / [hostExecutionEpochMs].
      */
     @Serializable
     @SerialName("SCHEDULE_PLAY")
     data class SchedulePlay(
-        val startPositionMs: Long,
-        val targetSystemTimeMs: Long
+        val startPositionMs: Long = 0L,
+        val targetSystemTimeMs: Long = 0L,
+        val hostExecutionEpochMs: Long = 0L
     ) : SyncMessage()
 
     /**
@@ -247,7 +281,8 @@ sealed class SyncMessage {
     @Serializable
     @SerialName("PAUSE")
     data class Pause(
-        val currentPositionMs: Long
+        val currentPositionMs: Long = 0L,
+        val positionMs: Long = 0L
     ) : SyncMessage()
 
     /**
@@ -258,6 +293,13 @@ sealed class SyncMessage {
     data class Seek(
         val targetPositionMs: Long,
         val targetSystemTimeMs: Long
+    ) : SyncMessage()
+
+    @Serializable
+    @SerialName("SCHEDULE_SEEK")
+    data class ScheduleSeek(
+        val targetPositionMs: Long,
+        val hostExecutionEpochMs: Long
     ) : SyncMessage()
 
     /**
@@ -291,11 +333,12 @@ object ProtocolSerializer {
     path: 'app/src/main/java/com/videowall/splicer/network/VideoWallServer.kt',
     language: 'kotlin',
     category: 'network',
-    description: 'Coroutine-based Master TCP Server. Handles client connections, responds to NTP Ping/Pong sync, and coordinates atomic playback dispatch.',
+    description: 'Master TCP Server managing dynamic video wall geometry, 2D matrix broadcasting, and sub-millisecond playback dispatch.',
     highlights: [
+      'Dynamic 2D screen slots with ScreenSlot mapping',
       'Coroutines with IO Dispatcher',
-      'SystemClock.elapsedRealtime() NTP timestamps',
-      'Atomic broadcastSchedulePlay(targetSystemTimeMs)'
+      'NTP 4-timestamp precision timestamps',
+      'Atomic broadcastSchedulePlay with microsecond timing'
     ],
     code: `package com.videowall.splicer.network
 
@@ -307,7 +350,15 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+
+data class ScreenSlot(
+    val deviceIndex: Int,
+    val row: Int,
+    val col: Int,
+    val rotationDeg: Int = 0
+)
 
 class VideoWallServer(
     private val port: Int = 8988,
@@ -319,8 +370,19 @@ class VideoWallServer(
     private var serverSocket: ServerSocket? = null
     private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val connectedClients = CopyOnWriteArrayList<ClientHandler>()
+    
+    // Slot mapping: deviceIndex -> ScreenSlot (0 is Host, 1..N are Clients)
+    private val slotAssignments = ConcurrentHashMap<Int, ScreenSlot>()
 
+    var configuredScreenCount: Int = 3
+        private set
     var currentOrientation: WallOrientation = WallOrientation.HORIZONTAL
+        private set
+    var gridRows: Int = 1
+        private set
+    var gridCols: Int = 3
+        private set
+    var currentScaleMode: ScaleMode = ScaleMode.COVER
         private set
     var currentMediaUri: String? = null
         private set
@@ -328,6 +390,11 @@ class VideoWallServer(
         private set
     var videoHeight: Int = 1080
         private set
+
+    init {
+        // Default 1x3 horizontal wall
+        rebuildDefaultSlots(configuredScreenCount, currentOrientation, gridRows, gridCols)
+    }
 
     fun start() {
         serverScope.launch {
@@ -339,13 +406,13 @@ class VideoWallServer(
                     val socket = serverSocket?.accept() ?: break
                     val clientHandler = ClientHandler(socket)
                     connectedClients.add(clientHandler)
-                    
+
                     withContext(Dispatchers.Main) {
                         onClientConnected(connectedClients.size, socket.inetAddress.hostAddress ?: "unknown")
                     }
 
-                    // Auto re-assign device indices to all connected screens
-                    reassignDeviceRoles()
+                    // Auto-sync roles when new device joins
+                    broadcastRoleAssignments()
 
                     clientHandler.startListening()
                 }
@@ -356,27 +423,98 @@ class VideoWallServer(
     }
 
     /**
-     * Broadcasts updated layout configuration and segment indices to all connected devices.
-     * Host device is index 0; clients are indices 1..N.
+     * Updates wall geometry and broadcasts to all clients.
      */
-    fun configureWall(orientation: WallOrientation, mediaUri: String, width: Int, height: Int) {
-        currentOrientation = orientation
-        currentMediaUri = mediaUri
-        videoWidth = width
-        videoHeight = height
-        reassignDeviceRoles()
+    fun broadcastConfiguration(
+        rows: Int,
+        cols: Int,
+        scaleMode: ScaleMode = ScaleMode.COVER,
+        mediaUri: String? = null,
+        videoWidth: Int = 1920,
+        videoHeight: Int = 1080
+    ) {
+        gridRows = rows
+        gridCols = cols
+        configuredScreenCount = rows * cols
+        currentScaleMode = scaleMode
+        if (mediaUri != null) currentMediaUri = mediaUri
+        this.videoWidth = videoWidth
+        this.videoHeight = videoHeight
+
+        rebuildDefaultSlots(configuredScreenCount, currentOrientation, rows, cols)
+        broadcastRoleAssignments()
     }
 
-    private fun reassignDeviceRoles() {
-        val totalDevices = connectedClients.size + 1 // +1 for Host itself
-        
+    fun configureWall(
+        screenCount: Int,
+        orientation: WallOrientation,
+        rows: Int = 1,
+        cols: Int = 1,
+        scaleMode: ScaleMode = ScaleMode.COVER,
+        mediaUri: String? = null,
+        width: Int = videoWidth,
+        height: Int = videoHeight
+    ) {
+        configuredScreenCount = screenCount
+        currentOrientation = orientation
+        gridRows = rows
+        gridCols = cols
+        currentScaleMode = scaleMode
+        if (mediaUri != null) currentMediaUri = mediaUri
+        videoWidth = width
+        videoHeight = height
+
+        rebuildDefaultSlots(screenCount, orientation, rows, cols)
+        broadcastRoleAssignments()
+    }
+
+    /**
+     * Broadcasts identification numbers across all connected screens.
+     */
+    fun broadcastIdentify(targetDeviceIndex: Int = -1, durationMs: Long = 3000L) {
         connectedClients.forEachIndexed { index, client ->
-            val clientIndex = index + 1 // Host is 0
+            val devIdx = index + 1
+            if (targetDeviceIndex == -1 || targetDeviceIndex == devIdx) {
+                client.sendMessage(SyncMessage.Identify(targetDeviceIndex = devIdx, displayIndex = devIdx + 1, durationMs = durationMs))
+            }
+        }
+    }
+
+    private fun rebuildDefaultSlots(total: Int, orient: WallOrientation, r: Int, c: Int) {
+        slotAssignments.clear()
+        for (i in 0 until total) {
+            val (row, col) = when (orient) {
+                WallOrientation.HORIZONTAL -> Pair(0, i)
+                WallOrientation.VERTICAL -> Pair(i, 0)
+                WallOrientation.GRID -> Pair(i / c.coerceAtLeast(1), i % c.coerceAtLeast(1))
+            }
+            slotAssignments[i] = ScreenSlot(deviceIndex = i, row = row, col = col)
+        }
+    }
+
+    fun broadcastRoleAssignments() {
+        val totalScreens = maxOf(configuredScreenCount, connectedClients.size + 1)
+        rebuildDefaultSlots(totalScreens, currentOrientation, gridRows, gridCols)
+
+        connectedClients.forEachIndexed { index, client ->
+            val clientIndex = index + 1 // Host is 0 (Screen 1), Clients are 1..N (Screens 2..N+1)
+            val slot = slotAssignments[clientIndex] ?: ScreenSlot(
+                deviceIndex = clientIndex,
+                row = clientIndex / gridCols.coerceAtLeast(1),
+                col = clientIndex % gridCols.coerceAtLeast(1)
+            )
+
             client.sendMessage(
                 SyncMessage.AssignRole(
                     deviceIndex = clientIndex,
-                    totalDevices = totalDevices,
-                    orientation = currentOrientation
+                    totalDevices = totalScreens,
+                    orientation = currentOrientation,
+                    row = slot.row,
+                    col = slot.col,
+                    totalRows = gridRows,
+                    totalCols = gridCols,
+                    scaleMode = currentScaleMode,
+                    rotationDeg = slot.rotationDeg
                 )
             )
 
@@ -393,14 +531,22 @@ class VideoWallServer(
         }
     }
 
-    /**
-     * Dispatches scheduled playback command to all clients.
-     * @param executionDelayMs Buffer time (e.g. 500ms) to ensure all clients receive and queue the play command.
-     */
+    fun broadcastPlay(startPositionMs: Long, targetTimeEpochMs: Long) {
+        val message = SyncMessage.SchedulePlay(
+            startPositionMs = startPositionMs,
+            targetSystemTimeMs = targetTimeEpochMs,
+            hostExecutionEpochMs = targetTimeEpochMs
+        )
+        connectedClients.forEach { it.sendMessage(message) }
+    }
+
     fun broadcastSchedulePlay(startPositionMs: Long, executionDelayMs: Long = 500L): Long {
         val targetSystemTimeMs = SystemClock.elapsedRealtime() + executionDelayMs
-        val message = SyncMessage.SchedulePlay(startPositionMs, targetSystemTimeMs)
-        
+        val message = SyncMessage.SchedulePlay(
+            startPositionMs = startPositionMs,
+            targetSystemTimeMs = targetSystemTimeMs,
+            hostExecutionEpochMs = targetSystemTimeMs
+        )
         connectedClients.forEach { client ->
             client.sendMessage(message)
         }
@@ -408,7 +554,10 @@ class VideoWallServer(
     }
 
     fun broadcastPause(currentPositionMs: Long) {
-        val message = SyncMessage.Pause(currentPositionMs)
+        val message = SyncMessage.Pause(
+            currentPositionMs = currentPositionMs,
+            positionMs = currentPositionMs
+        )
         connectedClients.forEach { it.sendMessage(message) }
     }
 
@@ -431,17 +580,14 @@ class VideoWallServer(
     }
 
     private inner class ClientHandler(private val socket: Socket) {
-        private var writer: PrintWriter? = null
-        private var reader: BufferedReader? = null
+        private val writer: PrintWriter = PrintWriter(socket.getOutputStream(), true)
+        private val reader: BufferedReader = BufferedReader(InputStreamReader(socket.getInputStream()))
 
         fun startListening() {
             serverScope.launch {
                 try {
-                    writer = PrintWriter(socket.getOutputStream(), true)
-                    reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-
                     while (isActive && !socket.isClosed) {
-                        val line = reader?.readLine() ?: break
+                        val line = reader.readLine() ?: break
                         handleIncomingMessage(line)
                     }
                 } catch (e: Exception) {
@@ -452,7 +598,7 @@ class VideoWallServer(
                     withContext(Dispatchers.Main) {
                         onClientDisconnected(connectedClients.size)
                     }
-                    reassignDeviceRoles()
+                    broadcastRoleAssignments()
                 }
             }
         }
@@ -461,7 +607,6 @@ class VideoWallServer(
             try {
                 when (val message = ProtocolSerializer.deserialize(rawJson)) {
                     is SyncMessage.Ping -> {
-                        // NTP 4-timestamp exchange
                         val t1ServerReceived = SystemClock.elapsedRealtime()
                         val t2ServerSent = SystemClock.elapsedRealtime()
                         
@@ -488,8 +633,8 @@ class VideoWallServer(
             serverScope.launch {
                 try {
                     val json = ProtocolSerializer.serialize(message)
-                    writer?.print(json)
-                    writer?.flush()
+                    writer.print(json)
+                    writer.flush()
                 } catch (e: Exception) {
                     Log.e(tag, "Failed to send message to client: \${e.message}")
                 }
@@ -499,8 +644,8 @@ class VideoWallServer(
         fun close() {
             try {
                 socket.close()
-                writer?.close()
-                reader?.close()
+                writer.close()
+                reader.close()
             } catch (e: Exception) {
                 // Ignore
             }
@@ -539,7 +684,8 @@ class VideoWallClient(
     private val onPlayScheduled: (startPositionMs: Long, localExecutionTimeMs: Long) -> Unit,
     private val onPause: (positionMs: Long) -> Unit,
     private val onSeekScheduled: (targetPositionMs: Long, localExecutionTimeMs: Long) -> Unit,
-    private val onSyncOffsetUpdated: (offsetMs: Long, rttMs: Long) -> Unit
+    private val onSyncOffsetUpdated: (offsetMs: Long, rttMs: Long) -> Unit,
+    private val onIdentify: ((displayIndex: Int, flashDurationMs: Long) -> Unit)? = null
 ) {
     private val tag = "VideoWallClient"
     private var socket: Socket? = null
@@ -547,11 +693,6 @@ class VideoWallClient(
     private var reader: BufferedReader? = null
     private val clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    /**
-     * Estimated Clock Offset between Host Clock and Client Clock in milliseconds.
-     * Host_Time = Client_Time + clockOffsetMs
-     * Client_Time = Host_Time - clockOffsetMs
-     */
     var clockOffsetMs: Long = 0L
         private set
     var roundTripTimeMs: Long = 0L
@@ -567,10 +708,8 @@ class VideoWallClient(
 
                 Log.d(tag, "Connected to Host at $hostIp:$port")
 
-                // Start continuous background NTP clock synchronizer
                 startNtpSyncLoop()
 
-                // Listen for host commands
                 while (isActive && socket?.isClosed == false) {
                     val line = reader?.readLine() ?: break
                     handleHostMessage(line)
@@ -581,9 +720,6 @@ class VideoWallClient(
         }
     }
 
-    /**
-     * Continuously exchanges NTP Ping/Pong messages every 2 seconds to keep clock synchronization accurate to <2ms.
-     */
     private fun startNtpSyncLoop() {
         clientScope.launch {
             while (isActive) {
@@ -603,18 +739,14 @@ class VideoWallClient(
         try {
             when (val message = ProtocolSerializer.deserialize(rawJson)) {
                 is SyncMessage.Pong -> {
-                    // NTP 4-timestamp calculation
                     val t3ClientReceived = SystemClock.elapsedRealtime()
                     val t0 = message.t0ClientSent
                     val t1 = message.t1ServerReceived
                     val t2 = message.t2ServerSent
 
-                    // Round Trip Time: (T3 - T0) - (T2 - T1)
                     val rtt = (t3ClientReceived - t0) - (t2 - t1)
-                    // Offset: ((T1 - T0) + (T2 - T3)) / 2
                     val instantOffset = ((t1 - t0) + (t2 - t3ClientReceived)) / 2
 
-                    // Exponential Moving Average (EMA) to smooth out network jitter
                     clockOffsetMs = if (clockOffsetMs == 0L) instantOffset else (clockOffsetMs * 0.7 + instantOffset * 0.3).toLong()
                     roundTripTimeMs = rtt
 
@@ -633,16 +765,16 @@ class VideoWallClient(
                     }
                 }
                 is SyncMessage.SchedulePlay -> {
-                    // Convert Host's targetSystemTimeMs into Client's local elapsedRealtime
-                    // targetClientSystemTime = targetHostSystemTime - clockOffsetMs
-                    val localExecutionTimeMs = message.targetSystemTimeMs - clockOffsetMs
+                    val executionEpoch = if (message.hostExecutionEpochMs > 0) message.hostExecutionEpochMs else message.targetSystemTimeMs
+                    val localExecutionTimeMs = executionEpoch - clockOffsetMs
                     clientScope.launch(Dispatchers.Main) {
                         onPlayScheduled(message.startPositionMs, localExecutionTimeMs)
                     }
                 }
                 is SyncMessage.Pause -> {
+                    val pos = if (message.positionMs > 0) message.positionMs else message.currentPositionMs
                     clientScope.launch(Dispatchers.Main) {
-                        onPause(message.currentPositionMs)
+                        onPause(pos)
                     }
                 }
                 is SyncMessage.Seek -> {
@@ -651,7 +783,25 @@ class VideoWallClient(
                         onSeekScheduled(message.targetPositionMs, localExecutionTimeMs)
                     }
                 }
-                else -> {}
+                is SyncMessage.ScheduleSeek -> {
+                    val localExecTime = message.hostExecutionEpochMs - clockOffsetMs
+                    clientScope.launch(Dispatchers.Main) {
+                        onSeekScheduled(message.targetPositionMs, localExecTime)
+                    }
+                }
+                is SyncMessage.Identify -> {
+                    clientScope.launch(Dispatchers.Main) {
+                        onIdentify?.invoke(message.displayIndex, message.durationMs)
+                    }
+                }
+                is SyncMessage.IdentifyScreen -> {
+                    clientScope.launch(Dispatchers.Main) {
+                        onIdentify?.invoke(message.displayIndex, message.flashDurationMs)
+                    }
+                }
+                else -> {
+                    Log.d(tag, "Received message: $rawJson")
+                }
             }
         } catch (e: Exception) {
             Log.e(tag, "Error parsing host message: \${e.message}")
@@ -659,7 +809,7 @@ class VideoWallClient(
     }
 
     private fun sendMessage(message: SyncMessage) {
-        clientScope.launch {
+        clientScope.launch(Dispatchers.IO) {
             try {
                 val json = ProtocolSerializer.serialize(message)
                 writer?.print(json)
@@ -691,7 +841,7 @@ class VideoWallClient(
     description: 'The precision Matrix transformation engine for TextureView screen splicing. Supports manual (row, col) grid coordinates, arbitrary aspect ratios, and scaling modes.',
     highlights: [
       'Arbitrary Grid Topology: scaleX = totalCols, scaleY = totalRows',
-      'Manual Screen Coordinates: postTranslate(-colIndex * viewWidth, -rowIndex * viewHeight)',
+      'Manual Screen Coordinates: postTranslate(-col * viewWidth, -row * viewHeight)',
       'Aspect Ratio Preset & Custom Letterbox / Pillarbox / Cover Fitting',
       'Screen Rotation compensation'
     ],
@@ -699,106 +849,125 @@ class VideoWallClient(
 
 import android.graphics.Matrix
 import android.view.TextureView
+import com.videowall.splicer.network.ScaleMode
 import com.videowall.splicer.network.WallOrientation
 
 object MatrixTransformHelper {
 
     /**
-     * Computes and applies the screen-splicing Matrix transformation onto a [TextureView].
-     * Supports manual (row, col) grid mapping, custom rows and cols, aspect ratios, and scale modes.
-     * 
-     * @param textureView The target TextureView where ExoPlayer renders video buffers.
-     * @param rowIndex The 0-based row coordinate of this screen (0..totalRows-1).
-     * @param colIndex The 0-based column coordinate of this screen (0..totalCols-1).
-     * @param totalRows Total number of rows in the video wall matrix.
-     * @param totalCols Total number of columns in the video wall matrix.
-     * @param videoWidth Original width of the video in pixels.
-     * @param videoHeight Original height of the video in pixels.
-     * @param viewWidth Width of this device's TextureView in pixels.
-     * @param viewHeight Height of this device's TextureView in pixels.
-     * @param aspectRatio Target aspect ratio string ("AUTO", "16:9", "9:16", "4:3", "1:1", "21:9", "32:9", "CUSTOM").
-     * @param scaleMode "COVER", "CONTAIN", or "STRETCH".
-     * @param rotationDegrees Rotation angle (0, 90, 180, 270).
+     * Computes and applies dynamic 2D screen-splicing Matrix transformation onto a [TextureView].
      */
     fun applySpliceTransform(
         textureView: TextureView,
-        rowIndex: Int,
-        colIndex: Int,
+        row: Int,
+        col: Int,
         totalRows: Int,
         totalCols: Int,
+        scaleMode: ScaleMode = ScaleMode.COVER,
         videoWidth: Int,
         videoHeight: Int,
         viewWidth: Float,
         viewHeight: Float,
-        aspectRatio: String = "AUTO",
-        scaleMode: String = "COVER",
-        rotationDegrees: Float = 0f
+        rotationDeg: Int = 0
     ): Matrix {
         if (viewWidth <= 0 || viewHeight <= 0 || totalRows <= 0 || totalCols <= 0) return Matrix()
 
         val matrix = Matrix()
 
-        var scaleX = totalCols.toFloat()
-        var scaleY = totalRows.toFloat()
-        var translateX = -(colIndex * viewWidth)
-        var translateY = -(rowIndex * viewHeight)
+        val totalWallWidth = viewWidth * totalCols
+        val totalWallHeight = viewHeight * totalRows
 
-        val virtualWallWidth = viewWidth * totalCols
-        val virtualWallHeight = viewHeight * totalRows
-        val wallAspect = virtualWallWidth / virtualWallHeight
+        val vWidth = if (videoWidth > 0) videoWidth.toFloat() else totalWallWidth
+        val vHeight = if (videoHeight > 0) videoHeight.toFloat() else totalWallHeight
 
-        val targetAspect = when (aspectRatio.uppercase()) {
-            "16:9" -> 16f / 9f
-            "9:16" -> 9f / 16f
-            "4:3" -> 4f / 3f
-            "1:1" -> 1.0f
-            "21:9" -> 21f / 9f
-            "32:9" -> 32f / 9f
-            else -> if (videoHeight > 0) videoWidth.toFloat() / videoHeight.toFloat() else wallAspect
-        }
+        val videoAspect = vWidth / vHeight
+        val wallAspect = totalWallWidth / totalWallHeight
 
-        if (scaleMode == "CONTAIN") {
-            var fittedWidth = virtualWallWidth
-            var fittedHeight = virtualWallHeight
-            var fitOffsetX = 0f
-            var fitOffsetY = 0f
+        var fittedWallWidth = totalWallWidth
+        var fittedWallHeight = totalWallHeight
+        var fitOffsetX = 0f
+        var fitOffsetY = 0f
 
-            if (targetAspect > wallAspect) {
-                fittedHeight = virtualWallWidth / targetAspect
-                fitOffsetY = (virtualWallHeight - fittedHeight) / 2f
-            } else {
-                fittedWidth = virtualWallHeight * targetAspect
-                fitOffsetX = (virtualWallWidth - fittedWidth) / 2f
+        when (scaleMode) {
+            ScaleMode.STRETCH -> {
+                fittedWallWidth = totalWallWidth
+                fittedWallHeight = totalWallHeight
+                fitOffsetX = 0f
+                fitOffsetY = 0f
             }
-
-            val contentRatioX = fittedWidth / virtualWallWidth
-            val contentRatioY = fittedHeight / virtualWallHeight
-            scaleX *= contentRatioX
-            scaleY *= contentRatioY
-            translateX = -(colIndex * viewWidth) * contentRatioX + (fitOffsetX / totalCols)
-            translateY = -(rowIndex * viewHeight) * contentRatioY + (fitOffsetY / totalRows)
-        } else if (scaleMode == "COVER" && aspectRatio.uppercase() != "AUTO") {
-            if (targetAspect > wallAspect) {
-                val stretchFactor = targetAspect / wallAspect
-                scaleX *= stretchFactor
-                translateX = -(colIndex * viewWidth) * stretchFactor - ((virtualWallWidth * (stretchFactor - 1f)) / (2f * totalCols))
-            } else {
-                val stretchFactor = wallAspect / targetAspect
-                scaleY *= stretchFactor
-                translateY = -(rowIndex * viewHeight) * stretchFactor - ((virtualWallHeight * (stretchFactor - 1f)) / (2f * totalRows))
+            ScaleMode.CONTAIN -> {
+                if (videoAspect > wallAspect) {
+                    fittedWallHeight = totalWallWidth / videoAspect
+                    fitOffsetY = (totalWallHeight - fittedWallHeight) / 2f
+                } else {
+                    fittedWallWidth = totalWallHeight * videoAspect
+                    fitOffsetX = (totalWallWidth - fittedWallWidth) / 2f
+                }
+            }
+            ScaleMode.COVER -> {
+                if (videoAspect > wallAspect) {
+                    fittedWallWidth = totalWallHeight * videoAspect
+                    fitOffsetX = (totalWallWidth - fittedWallWidth) / 2f
+                } else {
+                    fittedWallHeight = totalWallWidth / videoAspect
+                    fitOffsetY = (totalWallHeight - fittedWallHeight) / 2f
+                }
             }
         }
+
+        val scaleX = fittedWallWidth / viewWidth
+        val scaleY = fittedWallHeight / viewHeight
+
+        val translateX = -(col * viewWidth) + fitOffsetX
+        val translateY = -(row * viewHeight) + fitOffsetY
 
         matrix.setScale(scaleX, scaleY, 0f, 0f)
         matrix.postTranslate(translateX, translateY)
 
-        if (rotationDegrees != 0f) {
-            matrix.postRotate(rotationDegrees, viewWidth / 2f, viewHeight / 2f)
+        if (rotationDeg != 0) {
+            matrix.postRotate(rotationDeg.toFloat(), viewWidth / 2f, viewHeight / 2f)
         }
 
         textureView.setTransform(matrix)
         return matrix
     }
+
+    fun applySpliceTransformLegacy(
+        textureView: TextureView,
+        deviceIndex: Int,
+        totalDevices: Int,
+        orientation: WallOrientation,
+        videoWidth: Int,
+        videoHeight: Int,
+        viewWidth: Float,
+        viewHeight: Float,
+        scaleMode: ScaleMode = ScaleMode.COVER
+    ): Matrix {
+        val (row, col, totalRows, totalCols) = when (orientation) {
+            WallOrientation.HORIZONTAL -> Quad(0, deviceIndex, 1, totalDevices)
+            WallOrientation.VERTICAL -> Quad(deviceIndex, 0, totalDevices, 1)
+            WallOrientation.GRID -> {
+                val cols = kotlin.math.ceil(kotlin.math.sqrt(totalDevices.toDouble())).toInt().coerceAtLeast(1)
+                val rows = kotlin.math.ceil(totalDevices.toDouble() / cols).toInt().coerceAtLeast(1)
+                Quad(deviceIndex / cols, deviceIndex % cols, rows, cols)
+            }
+        }
+
+        return applySpliceTransform(
+            textureView = textureView,
+            row = row,
+            col = col,
+            totalRows = totalRows,
+            totalCols = totalCols,
+            scaleMode = scaleMode,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
+            viewWidth = viewWidth,
+            viewHeight = viewHeight
+        )
+    }
+
+    private data class Quad(val row: Int, val col: Int, val totalRows: Int, val totalCols: Int)
 }`
   },
   {
@@ -811,7 +980,8 @@ object MatrixTransformHelper {
     highlights: [
       'ExoPlayer TextureView surface binding',
       'Scheduled coroutine delay to exact millisecond',
-      'Micro-drift compensation (speed adjustment 0.98x - 1.02x)'
+      'Micro-drift compensation (speed adjustment 0.98x - 1.02x)',
+      'isPlaying() and currentPositionMs telemetry properties'
     ],
     code: `package com.videowall.splicer.playback
 
@@ -842,7 +1012,6 @@ class SyncPlaybackController(
     }
 
     private fun initExoPlayer() {
-        // Configure low buffer delay for fast seeking and sync response
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 500,  // minBufferMs
@@ -878,10 +1047,6 @@ class SyncPlaybackController(
         }
     }
 
-    /**
-     * Schedules the player to begin playback from [startPositionMs] at [localExecutionTimeMs].
-     * Uses Coroutine delay with SystemClock.elapsedRealtime() for sub-millisecond precision.
-     */
     fun schedulePlay(startPositionMs: Long, localExecutionTimeMs: Long) {
         scheduledPlayJob?.cancel()
         
@@ -912,33 +1077,36 @@ class SyncPlaybackController(
         exoPlayer?.seekTo(positionMs)
     }
 
-    /**
-     * Micro-drift watchdog: Adjusts playback speed smoothly if drift is small (<50ms)
-     * or performs a hard seek if drift is large (>100ms).
-     */
     fun correctDrift(masterPositionMs: Long) {
         val current = exoPlayer?.currentPosition ?: return
         val driftMs = current - masterPositionMs
 
         when {
             driftMs > 100 || driftMs < -100 -> {
-                // Large drift: Hard seek
                 exoPlayer?.seekTo(masterPositionMs)
                 exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
             }
             driftMs > 15 -> {
-                // Client is slightly ahead: slow down to 0.98x
                 exoPlayer?.playbackParameters = PlaybackParameters(0.98f)
             }
             driftMs < -15 -> {
-                // Client is slightly behind: speed up to 1.02x
                 exoPlayer?.playbackParameters = PlaybackParameters(1.02f)
             }
             else -> {
-                // Synchronized within tolerance
                 exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
             }
         }
+    }
+
+    fun isPlaying(): Boolean {
+        return exoPlayer?.isPlaying == true || exoPlayer?.playWhenReady == true
+    }
+
+    val currentPositionMs: Long
+        get() = exoPlayer?.currentPosition ?: 0L
+
+    fun getCurrentPosition(): Long {
+        return currentPositionMs
     }
 
     fun release() {
@@ -957,61 +1125,66 @@ class SyncPlaybackController(
     category: 'ui',
     description: 'Complete UI activities for Role Selection (MainActivity), Master Control Room (HostActivity), and Full-Screen Spliced Display (ClientActivity).',
     highlights: [
-      'Immersive Fullscreen Sticky Mode',
-      'Wi-Fi IP Address Detection',
-      'ActivityResultContracts.GetContent Video Picker'
+      'Interactive Setup Wizard dialog integration',
+      'Live dynamic Wall visualizer preview grid',
+      'Embedded HTTP video server streaming to clients',
+      'UDP broadcast zero-config discovery'
     ],
     code: `package com.videowall.splicer.ui
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
-import android.net.wifi.WifiManager
 import android.os.Bundle
-import android.text.format.Formatter
+import android.os.SystemClock
+import android.util.Log
 import android.view.View
-import android.view.WindowInsets
-import android.view.WindowInsetsController
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.videowall.splicer.R
 import com.videowall.splicer.databinding.ActivityClientBinding
 import com.videowall.splicer.databinding.ActivityHostBinding
 import com.videowall.splicer.databinding.ActivityMainBinding
 import com.videowall.splicer.network.*
 import com.videowall.splicer.playback.SyncPlaybackController
 import com.videowall.splicer.transform.MatrixTransformHelper
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
-// ==========================================
-// 1. HOME SCREEN / ROLE SELECTION
-// ==========================================
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private var selectedOrientation = WallOrientation.HORIZONTAL
+    private var discoveryJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.radioOrientation.setOnCheckedChangeListener { _, checkedId ->
-            selectedOrientation = if (checkedId == binding.radioHorizontal.id) {
-                WallOrientation.HORIZONTAL
-            } else {
-                WallOrientation.VERTICAL
-            }
+        val localIp = NetworkUtils.getLocalIpAddress(this)
+        binding.tvNetworkStatus.text = "🟢 Connected: $localIp (Port: 8988)"
+
+        val gatewayIp = NetworkUtils.getGatewayIpAddress(this)
+        binding.inputHostIp.setText(gatewayIp)
+
+        discoveryJob = DiscoveryService.startListening(this, lifecycleScope) { hostIp, _ ->
+            binding.inputHostIp.setText(hostIp)
+            binding.tvAutoDiscoveredHost.text = "🎯 Auto-detected Host: $hostIp"
+            binding.tvAutoDiscoveredHost.visibility = View.VISIBLE
         }
 
-        binding.btnHost.setOnClickListener {
-            val intent = Intent(this, HostActivity::class.java).apply {
-                putExtra("ORIENTATION", selectedOrientation.name)
-            }
+        binding.btnHostCard.setOnClickListener {
+            val intent = Intent(this, HostActivity::class.java)
             startActivity(intent)
         }
 
-        binding.btnJoin.setOnClickListener {
+        binding.btnClientCard.setOnClickListener {
             val hostIp = binding.inputHostIp.text.toString().trim()
             if (hostIp.isEmpty()) {
-                Toast.makeText(this, "Please enter Host IP Address", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please enter or select a Host IP address", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             val intent = Intent(this, ClientActivity::class.java).apply {
@@ -1020,26 +1193,37 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        discoveryJob?.cancel()
+    }
 }
 
-// ==========================================
-// 2. HOST / MASTER CONTROL SCREEN
-// ==========================================
 class HostActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHostBinding
     private var server: VideoWallServer? = null
+    private var httpServer: LocalMediaHttpServer? = null
     private var syncController: SyncPlaybackController? = null
+    private var discoveryJob: Job? = null
+    private var progressTrackingJob: Job? = null
+
     private var selectedVideoUri: Uri? = null
     private var videoWidth: Int = 1920
     private var videoHeight: Int = 1080
+    private var screenCount: Int = 3
     private var orientation: WallOrientation = WallOrientation.HORIZONTAL
+    private var gridRows: Int = 1
+    private var gridCols: Int = 3
+    private var scaleMode: ScaleMode = ScaleMode.COVER
 
     private val videoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             selectedVideoUri = it
-            binding.tvSelectedVideo.text = it.lastPathSegment ?: "Video Selected"
+            binding.tvSelectedVideo.text = "🎬 " + (it.lastPathSegment ?: "Local Video")
+            httpServer?.setMediaUri(it)
             syncController?.prepareMedia(it)
-            server?.configureWall(orientation, it.toString(), videoWidth, videoHeight)
+            broadcastConfiguration()
         }
     }
 
@@ -1047,53 +1231,118 @@ class HostActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityHostBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        hideSystemUI()
 
-        orientation = WallOrientation.valueOf(intent.getStringExtra("ORIENTATION") ?: "HORIZONTAL")
-        binding.tvHostIp.text = "Host IP: " + getLocalIpAddress()
+        val hostIp = getLocalIpAddress()
+        binding.tvHostIp.text = hostIp
+
+        httpServer = LocalMediaHttpServer(this, 8990).apply { start() }
+
+        server = VideoWallServer(
+            port = 8988,
+            onClientConnected = { count, ip ->
+                binding.tvConnectedCount.text = "$count Connected"
+                updateLiveWallPreview()
+                broadcastConfiguration()
+            },
+            onClientDisconnected = { count ->
+                binding.tvConnectedCount.text = "$count Connected"
+                updateLiveWallPreview()
+                broadcastConfiguration()
+            },
+            onHeartbeatReceived = { /* telemetry */ }
+        ).apply { start() }
 
         syncController = SyncPlaybackController(this, binding.hostTextureView) { width, height ->
             videoWidth = width
             videoHeight = height
             updateMatrix()
-            server?.configureWall(orientation, selectedVideoUri.toString(), width, height)
+            broadcastConfiguration()
         }
 
-        server = VideoWallServer(
-            port = 8988,
-            onClientConnected = { count, ip ->
-                binding.tvConnectedClients.text = "Connected Screens: $count"
-                updateMatrix()
-            },
-            onClientDisconnected = { count ->
-                binding.tvConnectedClients.text = "Connected Screens: $count"
-                updateMatrix()
-            },
-            onHeartbeatReceived = { /* Monitor sync telemetry */ }
-        ).apply { start() }
+        discoveryJob = DiscoveryService.startBroadcasting(lifecycleScope, hostIp, 8988)
 
-        binding.btnPickVideo.setOnClickListener {
+        setupUIControls()
+        updateLiveWallPreview()
+        startPlaybackProgressTracker()
+    }
+
+    private fun setupUIControls() {
+        binding.btnOpenWizard.setOnClickListener {
+            val dialog = HostSetupWizardDialog(
+                server = server!!,
+                connectedClientsCount = (server?.configuredScreenCount ?: 3) - 1
+            ) { count, orient, r, c, mode ->
+                screenCount = count
+                orientation = orient
+                gridRows = r
+                gridCols = c
+                scaleMode = mode
+                binding.tvWallConfigSummary.text = "Geometry: \${r}x\${c} | Mode: \$mode"
+                updateLiveWallPreview()
+                updateMatrix()
+                broadcastConfiguration()
+            }
+            dialog.show(supportFragmentManager, "HostSetupWizard")
+        }
+
+        binding.btnSelectVideo.setOnClickListener {
             videoPickerLauncher.launch("video/*")
         }
 
-        binding.btnPlay.setOnClickListener {
-            val targetTime = server?.broadcastSchedulePlay(0L, 500L) ?: 0L
-            syncController?.schedulePlay(0L, targetTime)
+        binding.btnPlayPause.setOnClickListener {
+            if (syncController?.isPlaying() == true) {
+                pausePlayback()
+            } else {
+                startScheduledPlayback()
+            }
         }
 
-        binding.btnPause.setOnClickListener {
-            server?.broadcastPause(0L)
-            syncController?.pause()
+        binding.btnIdentifyAll.setOnClickListener {
+            server?.broadcastIdentify(-1, 3000L)
+        }
+
+        binding.btnChangeRole.setOnClickListener {
+            finish()
         }
     }
 
+    private fun startScheduledPlayback() {
+        val startPos = syncController?.currentPositionMs ?: 0L
+        val targetEpoch = SystemClock.elapsedRealtime() + 400L
+        server?.broadcastPlay(startPos, targetEpoch)
+        syncController?.schedulePlay(startPos, targetEpoch)
+        binding.btnPlayPause.text = "⏸ Pause"
+    }
+
+    private fun pausePlayback() {
+        val pos = syncController?.currentPositionMs ?: 0L
+        server?.broadcastPause(pos)
+        syncController?.pause()
+        binding.btnPlayPause.text = "▶ Play"
+    }
+
+    private fun broadcastConfiguration() {
+        val hostIp = getLocalIpAddress()
+        val streamUrl = "http://\$hostIp:8990/video"
+        server?.broadcastConfiguration(
+            rows = gridRows,
+            cols = gridCols,
+            scaleMode = scaleMode,
+            mediaUri = streamUrl,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight
+        )
+        updateMatrix()
+    }
+
     private fun updateMatrix() {
-        val totalScreens = 1 + (server?.run { 1 } ?: 1)
         MatrixTransformHelper.applySpliceTransform(
-            binding.hostTextureView,
-            deviceIndex = 0, // Master is screen 0
-            totalDevices = totalScreens,
-            orientation = orientation,
+            textureView = binding.hostTextureView,
+            row = 0,
+            col = 0,
+            totalRows = gridRows,
+            totalCols = gridCols,
+            scaleMode = scaleMode,
             videoWidth = videoWidth,
             videoHeight = videoHeight,
             viewWidth = binding.hostTextureView.width.toFloat(),
@@ -1101,37 +1350,76 @@ class HostActivity : AppCompatActivity() {
         )
     }
 
-    private fun getLocalIpAddress(): String {
-        val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-        return Formatter.formatIpAddress(wifiManager.connectionInfo.ipAddress)
+    private fun updateLiveWallPreview() {
+        binding.liveWallGridContainer.removeAllViews()
+        val inflater = layoutInflater
+
+        for (r in 0 until gridRows) {
+            val rowLayout = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1.0f
+                )
+            }
+            for (c in 0 until gridCols) {
+                val index = (r * gridCols) + c
+                val tile = inflater.inflate(R.layout.item_screen_preview_tile, rowLayout, false)
+                val tvTitle = tile.findViewById<android.widget.TextView>(R.id.tvTileTitle)
+                val tvCoord = tile.findViewById<android.widget.TextView>(R.id.tvTileCoords)
+
+                val displayScreenNum = index + 1
+                if (index == 0) {
+                    tvTitle.text = "Screen 1 (Host)"
+                    tile.setBackgroundColor(0xFF4F46E5.toInt())
+                } else {
+                    tvTitle.text = "Screen \$displayScreenNum"
+                    tile.setBackgroundColor(0xFF1E293B.toInt())
+                }
+                tvCoord.text = "[R\$r:C\$c]"
+                
+                val params = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 1.0f).apply {
+                    setMargins(3, 3, 3, 3)
+                }
+                tile.layoutParams = params
+                rowLayout.addView(tile)
+            }
+            binding.liveWallGridContainer.addView(rowLayout)
+        }
     }
 
-    private fun hideSystemUI() {
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            or View.SYSTEM_UI_FLAG_FULLSCREEN
-            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        )
+    private fun startPlaybackProgressTracker() {
+        progressTrackingJob = lifecycleScope.launch {
+            while (isActive) {
+                val current = syncController?.currentPositionMs ?: 0L
+                val sec = (current / 1000) % 60
+                val min = (current / (1000 * 60))
+                binding.tvPlaybackTimer.text = String.format("%02d:%02d", min, sec)
+                delay(500L)
+            }
+        }
+    }
+
+    private fun getLocalIpAddress(): String {
+        return NetworkUtils.getLocalIpAddress(this)
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        discoveryJob?.cancel()
+        progressTrackingJob?.cancel()
         server?.stop()
+        httpServer?.stop()
         syncController?.release()
     }
 }
 
-// ==========================================
-// 3. CLIENT SCREEN / IMMERSIVE SPLICED DISPLAY
-// ==========================================
 class ClientActivity : AppCompatActivity() {
     private lateinit var binding: ActivityClientBinding
     private var client: VideoWallClient? = null
     private var syncController: SyncPlaybackController? = null
-    private var deviceIndex = 1
-    private var totalDevices = 2
-    private var orientation = WallOrientation.HORIZONTAL
+    private var currentRole: SyncMessage.AssignRole? = null
     private var videoWidth = 1920
     private var videoHeight = 1080
 
@@ -1139,36 +1427,34 @@ class ClientActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityClientBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        hideSystemUI()
 
-        val hostIp = intent.getStringExtra("HOST_IP") ?: "192.168.1.100"
+        val hostIp = intent.getStringExtra("HOST_IP") ?: "192.168.43.1"
 
-        syncController = SyncPlaybackController(this, binding.clientTextureView) { w, h ->
-            videoWidth = w
-            videoHeight = h
-            applySplice()
+        syncController = SyncPlaybackController(this, binding.clientTextureView) { width, height ->
+            videoWidth = width
+            videoHeight = height
+            currentRole?.let { applyMatrix(it) }
         }
 
         client = VideoWallClient(
             hostIp = hostIp,
             port = 8988,
             onRoleAssigned = { role ->
-                deviceIndex = role.deviceIndex
-                totalDevices = role.totalDevices
-                orientation = role.orientation
-                binding.tvScreenIndex.text = "Screen \${deviceIndex + 1} of $totalDevices"
-                applySplice()
+                currentRole = role
+                val screenNum = role.deviceIndex + 1
+                binding.tvScreenIndex.text = "Screen \$screenNum of \${role.totalDevices} [R\${role.row}:C\${role.col}]"
+                applyMatrix(role)
             },
             onMediaPrepared = { media ->
                 videoWidth = media.videoWidth
                 videoHeight = media.videoHeight
                 syncController?.prepareMedia(Uri.parse(media.mediaUri))
-                applySplice()
+                currentRole?.let { applyMatrix(it) }
             },
             onPlayScheduled = { startPos, localExecTime ->
                 syncController?.schedulePlay(startPos, localExecTime)
             },
-            onPause = {
+            onPause = { _ ->
                 syncController?.pause()
             },
             onSeekScheduled = { targetPos, localExecTime ->
@@ -1176,30 +1462,36 @@ class ClientActivity : AppCompatActivity() {
             },
             onSyncOffsetUpdated = { offset, rtt ->
                 binding.tvSyncTelemetry.text = "Offset: \${offset}ms | RTT: \${rtt}ms"
+            },
+            onIdentify = { displayIndex, durationMs ->
+                showIdentifyOverlay(displayIndex, durationMs)
             }
         ).apply { connect() }
     }
 
-    private fun applySplice() {
+    private fun applyMatrix(role: SyncMessage.AssignRole) {
         MatrixTransformHelper.applySpliceTransform(
-            binding.clientTextureView,
-            deviceIndex = deviceIndex,
-            totalDevices = totalDevices,
-            orientation = orientation,
+            textureView = binding.clientTextureView,
+            row = role.row,
+            col = role.col,
+            totalRows = role.totalRows,
+            totalCols = role.totalCols,
+            scaleMode = role.scaleMode,
             videoWidth = videoWidth,
             videoHeight = videoHeight,
             viewWidth = binding.clientTextureView.width.toFloat(),
-            viewHeight = binding.clientTextureView.height.toFloat()
+            viewHeight = binding.clientTextureView.height.toFloat(),
+            rotationDeg = role.rotationDeg
         )
     }
 
-    private fun hideSystemUI() {
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            or View.SYSTEM_UI_FLAG_FULLSCREEN
-            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        )
+    private fun showIdentifyOverlay(displayNum: Int, durationMs: Long) {
+        binding.tvIdentifyBigNumber.text = "$displayNum"
+        binding.tvIdentifySubtitle.text = "Screen $displayNum"
+        binding.identifyOverlay.visibility = View.VISIBLE
+        binding.identifyOverlay.postDelayed({
+            binding.identifyOverlay.visibility = View.GONE
+        }, durationMs)
     }
 
     override fun onDestroy() {
@@ -1215,12 +1507,12 @@ class ClientActivity : AppCompatActivity() {
     path: 'app/src/main/java/com/videowall/splicer/ui/HostSetupWizardDialog.kt',
     language: 'kotlin',
     category: 'ui',
-    description: 'Host Video Wall Interactive Setup Wizard: asks the host how many screens are connected, video division orientation (Horizontal / Vertical / Grid), and physical screen arrangement.',
+    description: 'Interactive 4-step Host Video Wall Setup Wizard: screen count selector, dynamic video division, screen arrangement mapping with identify screen flash, and aspect ratio fit modes.',
     highlights: [
-      'Dynamic connected screens discovery & counter',
-      'Horizontal (1xN), Vertical (Nx1), and Grid (RxC) division selection',
-      'Screen arrangement mapping and identify flash trigger',
-      'Broadcasts new roles and matrix coordinates to all nodes'
+      'Interactive 4-step wizard dialog',
+      'Dynamic geometry calculation (1xN, Nx1, RxC grid)',
+      'Live identify screen flash trigger',
+      'ScaleMode selector (Cover, Contain, Stretch)'
     ],
     code: `package com.videowall.splicer.ui
 
@@ -1230,140 +1522,212 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.fragment.app.DialogFragment
-import com.google.android.material.button.MaterialButton
 import com.videowall.splicer.R
-import com.videowall.splicer.network.VideoWallHostServer
+import com.videowall.splicer.network.ScaleMode
+import com.videowall.splicer.network.VideoWallServer
 import com.videowall.splicer.network.WallOrientation
 
 class HostSetupWizardDialog(
-    private val hostServer: VideoWallHostServer,
-    private val onConfigurationApplied: (screenCount: Int, orientation: WallOrientation, rows: Int, cols: Int) -> Unit
+    private val server: VideoWallServer,
+    private val connectedClientsCount: Int,
+    private val onConfigurationApplied: (screenCount: Int, orientation: WallOrientation, rows: Int, cols: Int, scaleMode: ScaleMode) -> Unit
 ) : DialogFragment() {
 
     private var currentStep = 1
-    private var selectedScreenCount = 3
-    private var selectedOrientation = WallOrientation.HORIZONTAL
+    private var screenCount = maxOf(connectedClientsCount + 1, 3)
+    private var orientation = WallOrientation.HORIZONTAL
     private var gridRows = 1
-    private var gridCols = 3
+    private var gridCols = screenCount
+    private var scaleMode = ScaleMode.COVER
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        val view = inflater.inflate(R.layout.dialog_host_setup_wizard, container, false)
-        setupViews(view)
-        return view
+        val root = inflater.inflate(R.layout.dialog_host_setup_wizard, container, false)
+        setupViews(root)
+        return root
     }
 
     private fun setupViews(root: View) {
         val tvStepTitle = root.findViewById<TextView>(R.id.tvStepTitle)
         val tvStepDesc = root.findViewById<TextView>(R.id.tvStepDesc)
-        val step1Container = root.findViewById<ViewGroup>(R.id.step1Container)
-        val step2Container = root.findViewById<ViewGroup>(R.id.step2Container)
-        val step3Container = root.findViewById<ViewGroup>(R.id.step3Container)
-        val step4Container = root.findViewById<ViewGroup>(R.id.step4Container)
+        val tvStepCounter = root.findViewById<TextView>(R.id.tvStepCounter)
 
-        val btnNext = root.findViewById<Button>(R.id.btnNext)
-        val btnBack = root.findViewById<Button>(R.id.btnBack)
-        val btnAddScreen = root.findViewById<MaterialButton>(R.id.btnAddScreen)
-        val btnRemoveScreen = root.findViewById<MaterialButton>(R.id.btnRemoveScreen)
+        val step1 = root.findViewById<ViewGroup>(R.id.step1Container)
+        val step2 = root.findViewById<ViewGroup>(R.id.step2Container)
+        val step3 = root.findViewById<ViewGroup>(R.id.step3Container)
+        val step4 = root.findViewById<ViewGroup>(R.id.step4Container)
+
         val tvScreenCount = root.findViewById<TextView>(R.id.tvScreenCount)
+        val tvDetected = root.findViewById<TextView>(R.id.tvDetectedClientsNotice)
+        val btnAdd = root.findViewById<Button>(R.id.btnAddScreen)
+        val btnRemove = root.findViewById<Button>(R.id.btnRemoveScreen)
 
-        btnAddScreen?.setOnClickListener {
-            selectedScreenCount++
-            tvScreenCount?.text = "$selectedScreenCount Screens"
-            updateLayoutDimensions()
-        }
+        val rgOrientation = root.findViewById<RadioGroup>(R.id.rgOrientation)
+        val rbHorizontal = root.findViewById<RadioButton>(R.id.rbHorizontal)
+        val rbVertical = root.findViewById<RadioButton>(R.id.rbVertical)
+        val rbGrid = root.findViewById<RadioButton>(R.id.rbGrid)
 
-        btnRemoveScreen?.setOnClickListener {
-            if (selectedScreenCount > 1) {
-                selectedScreenCount--
-                tvScreenCount?.text = "$selectedScreenCount Screens"
-                updateLayoutDimensions()
+        val tvArrangement = root.findViewById<TextView>(R.id.tvArrangementSummary)
+        val btnIdentify = root.findViewById<Button>(R.id.btnIdentifyScreens)
+
+        val rgScaleMode = root.findViewById<RadioGroup>(R.id.rgScaleMode)
+        val rbCover = root.findViewById<RadioButton>(R.id.rbCover)
+        val rbContain = root.findViewById<RadioButton>(R.id.rbContain)
+        val rbStretch = root.findViewById<RadioButton>(R.id.rbStretch)
+
+        val btnBack = root.findViewById<Button>(R.id.btnBack)
+        val btnNext = root.findViewById<Button>(R.id.btnNext)
+
+        tvDetected.text = "🟢 Connected Client Devices: $connectedClientsCount found (\${connectedClientsCount + 1} total with Host)"
+        tvScreenCount.text = "$screenCount Screens"
+
+        btnAdd.setOnClickListener {
+            if (screenCount < 16) {
+                screenCount++
+                tvScreenCount.text = "$screenCount Screens"
+                updateGeometry()
             }
         }
 
-        btnNext?.setOnClickListener {
+        btnRemove.setOnClickListener {
+            if (screenCount > 1) {
+                screenCount--
+                tvScreenCount.text = "$screenCount Screens"
+                updateGeometry()
+            }
+        }
+
+        rgOrientation.setOnCheckedChangeListener { _, checkedId ->
+            orientation = when (checkedId) {
+                rbVertical.id -> WallOrientation.VERTICAL
+                rbGrid.id -> WallOrientation.GRID
+                else -> WallOrientation.HORIZONTAL
+            }
+            updateGeometry()
+        }
+
+        btnIdentify.setOnClickListener {
+            server.broadcastIdentify(-1, 3000L)
+        }
+
+        rgScaleMode.setOnCheckedChangeListener { _, checkedId ->
+            scaleMode = when (checkedId) {
+                rbContain.id -> ScaleMode.CONTAIN
+                rbStretch.id -> ScaleMode.STRETCH
+                else -> ScaleMode.COVER
+            }
+        }
+
+        btnNext.setOnClickListener {
             if (currentStep < 4) {
                 currentStep++
-                updateStepUI(tvStepTitle, tvStepDesc, step1Container, step2Container, step3Container, step4Container, btnNext)
+                updateStepUI(tvStepTitle, tvStepDesc, tvStepCounter, step1, step2, step3, step4, btnNext, btnBack, tvArrangement)
             } else {
-                applyConfiguration()
-                dismiss()
+                applyAndDismiss()
             }
         }
 
-        btnBack?.setOnClickListener {
+        btnBack.setOnClickListener {
             if (currentStep > 1) {
                 currentStep--
-                updateStepUI(tvStepTitle, tvStepDesc, step1Container, step2Container, step3Container, step4Container, btnNext)
+                updateStepUI(tvStepTitle, tvStepDesc, tvStepCounter, step1, step2, step3, step4, btnNext, btnBack, tvArrangement)
+            } else {
+                dismiss()
             }
         }
     }
 
-    private fun updateLayoutDimensions() {
-        when (selectedOrientation) {
+    private fun updateGeometry() {
+        when (orientation) {
             WallOrientation.HORIZONTAL -> {
                 gridRows = 1
-                gridCols = selectedScreenCount
+                gridCols = screenCount
             }
             WallOrientation.VERTICAL -> {
-                gridRows = selectedScreenCount
+                gridRows = screenCount
                 gridCols = 1
+            }
+            WallOrientation.GRID -> {
+                gridCols = kotlin.math.ceil(kotlin.math.sqrt(screenCount.toDouble())).toInt().coerceAtLeast(1)
+                gridRows = kotlin.math.ceil(screenCount.toDouble() / gridCols).toInt().coerceAtLeast(1)
             }
         }
     }
 
     private fun updateStepUI(
-        title: TextView?,
-        desc: TextView?,
-        s1: ViewGroup?,
-        s2: ViewGroup?,
-        s3: ViewGroup?,
-        s4: ViewGroup?,
-        btnNext: Button?
+        title: TextView,
+        desc: TextView,
+        counter: TextView,
+        s1: ViewGroup,
+        s2: ViewGroup,
+        s3: ViewGroup,
+        s4: ViewGroup,
+        btnNext: Button,
+        btnBack: Button,
+        tvArrangement: TextView
     ) {
-        s1?.visibility = if (currentStep == 1) View.VISIBLE else View.GONE
-        s2?.visibility = if (currentStep == 2) View.VISIBLE else View.GONE
-        s3?.visibility = if (currentStep == 3) View.VISIBLE else View.GONE
-        s4?.visibility = if (currentStep == 4) View.VISIBLE else View.GONE
+        s1.visibility = if (currentStep == 1) View.VISIBLE else View.GONE
+        s2.visibility = if (currentStep == 2) View.VISIBLE else View.GONE
+        s3.visibility = if (currentStep == 3) View.VISIBLE else View.GONE
+        s4.visibility = if (currentStep == 4) View.VISIBLE else View.GONE
+
+        counter.text = "$currentStep / 4"
+        btnBack.text = if (currentStep == 1) "Cancel" else "Back"
 
         when (currentStep) {
             1 -> {
-                title?.text = "Step 1: How many screens are connected?"
-                desc?.text = "The video will divide dynamically according to your screen count."
-                btnNext?.text = "Continue"
+                title.text = "Step 1: Screen Count"
+                desc.text = "How many screens are connected to this video wall?"
+                btnNext.text = "Continue"
             }
             2 -> {
-                title?.text = "Step 2: How would you like to play the video?"
-                desc?.text = "Choose Horizontal (1xN), Vertical (Nx1), or Matrix Grid division."
-                btnNext?.text = "Continue"
+                title.text = "Step 2: Video Playback & Division"
+                desc.text = "How would you like to divide & slice the video?"
+                btnNext.text = "Continue"
             }
             3 -> {
-                title?.text = "Step 3: How do you want to arrange the screens?"
-                desc?.text = "Map which physical phone is on the Left, Center, Right or Top/Bottom."
-                btnNext?.text = "Continue"
+                title.text = "Step 3: Screen Arrangement"
+                desc.text = "Map which physical phone is on the Left, Center, Right or Top/Bottom."
+                btnNext.text = "Continue"
+                updateGeometry()
+                val summary = StringBuilder()
+                for (i in 0 until screenCount) {
+                    val label = if (i == 0) "Host (Master)" else "Client \$i"
+                    val (r, c) = when (orientation) {
+                        WallOrientation.HORIZONTAL -> Pair(0, i)
+                        WallOrientation.VERTICAL -> Pair(i, 0)
+                        WallOrientation.GRID -> Pair(i / gridCols, i % gridCols)
+                    }
+                    summary.append("Slot \${i + 1} [Row \$r, Col \$c] ➔ \$label\\n")
+                }
+                tvArrangement.text = summary.toString().trim()
             }
             4 -> {
-                title?.text = "Step 4: Aspect Ratio & Splicing Fit"
-                desc?.text = "Select Auto, 16:9, 9:16 or Cover / Contain mode."
-                btnNext?.text = "Apply & Divide Video"
+                title.text = "Step 4: Aspect Ratio & Fit Mode"
+                desc.text = "Select Cover (full bleed), Contain (letterbox), or Stretch."
+                btnNext.text = "Apply & Divide Video"
             }
         }
     }
 
-    private fun applyConfiguration() {
-        updateLayoutDimensions()
-        hostServer.broadcastRoleAssignments(
-            totalDevices = selectedScreenCount,
-            orientation = selectedOrientation,
-            totalRows = gridRows,
-            totalCols = gridCols
+    private fun applyAndDismiss() {
+        updateGeometry()
+        server.configureWall(
+            screenCount = screenCount,
+            orientation = orientation,
+            rows = gridRows,
+            cols = gridCols,
+            scaleMode = scaleMode
         )
-        onConfigurationApplied(selectedScreenCount, selectedOrientation, gridRows, gridCols)
+        onConfigurationApplied(screenCount, orientation, gridRows, gridCols, scaleMode)
+        dismiss()
     }
 }`
   },
@@ -1390,10 +1754,6 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.StringTokenizer
 
-/**
- * Embedded HTTP server running on the Host device to stream local video files (content:// or file://)
- * directly to ExoPlayer instances on connected client phones over Wi-Fi with HTTP 206 Range support.
- */
 class LocalMediaHttpServer(
     private val context: Context,
     private val port: Int = 8990
@@ -1483,7 +1843,7 @@ class LocalMediaHttpServer(
                         endByte = parts[1].toLong()
                     }
                 } catch (e: Exception) {
-                    // Fallback to full range
+                    // Fallback
                 }
             }
 
@@ -1516,7 +1876,6 @@ class LocalMediaHttpServer(
                 return
             }
 
-            // Stream file data efficiently
             val inputStream = context.contentResolver.openInputStream(uri)
             if (inputStream != null) {
                 inputStream.use { stream ->

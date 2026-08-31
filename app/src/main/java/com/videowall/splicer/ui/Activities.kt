@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.videowall.splicer.R
 import com.videowall.splicer.databinding.ActivityClientBinding
 import com.videowall.splicer.databinding.ActivityHostBinding
 import com.videowall.splicer.databinding.ActivityMainBinding

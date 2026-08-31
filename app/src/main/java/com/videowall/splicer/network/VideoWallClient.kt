@@ -144,6 +144,9 @@ class VideoWallClient(
                     val localExecTime = message.hostExecutionEpochMs - clockOffsetMs
                     onSeekScheduled(message.targetPositionMs, localExecTime)
                 }
+                is SyncMessage.Identify -> {
+                    onIdentify?.invoke(message.displayIndex, message.durationMs)
+                }
                 is SyncMessage.IdentifyScreen -> {
                     onIdentify?.invoke(message.displayIndex, message.flashDurationMs)
                 }
