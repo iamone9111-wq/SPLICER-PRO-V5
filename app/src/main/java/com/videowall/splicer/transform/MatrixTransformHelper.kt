@@ -61,7 +61,7 @@ object MatrixTransformHelper {
                 fitOffsetX = 0f
                 fitOffsetY = 0f
             }
-            ScaleMode.CONTAIN -> {
+            ScaleMode.CONTAIN, ScaleMode.FIT -> {
                 // Entire video must be visible; letterbox or pillarbox virtual wall
                 if (videoAspect > wallAspect) {
                     fittedWallHeight = totalWallWidth / videoAspect

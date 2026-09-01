@@ -897,7 +897,7 @@ object MatrixTransformHelper {
                 fitOffsetX = 0f
                 fitOffsetY = 0f
             }
-            ScaleMode.CONTAIN -> {
+            ScaleMode.CONTAIN, ScaleMode.FIT -> {
                 if (videoAspect > wallAspect) {
                     fittedWallHeight = totalWallWidth / videoAspect
                     fitOffsetY = (totalWallHeight - fittedWallHeight) / 2f
