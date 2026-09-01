@@ -71,7 +71,7 @@ class VideoWallClient(
             startNtpSyncLoop()
 
             // Listen for host commands
-            launch(Dispatchers.IO) {
+            clientScope.launch(Dispatchers.IO) {
                 try {
                     while (isActive && socket?.isClosed == false) {
                         val line = reader?.readLine() ?: break
