@@ -179,12 +179,14 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+@Serializable
 enum class WallOrientation {
     HORIZONTAL, // Landscape: 1 x N screens arranged Left-to-Right
     VERTICAL,   // Portrait: N x 1 screens arranged Top-to-Bottom
     GRID        // 2D Matrix: R x C custom screen grid
 }
 
+@Serializable
 enum class ScaleMode {
     COVER,      // Full bleed zoom, no black borders
     CONTAIN,    // Entire video visible with letterbox/pillarbox

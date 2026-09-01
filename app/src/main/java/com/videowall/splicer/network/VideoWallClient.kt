@@ -140,6 +140,10 @@ class VideoWallClient(
                 is SyncMessage.Pause -> {
                     onPause(message.positionMs)
                 }
+                is SyncMessage.Seek -> {
+                    val localExecTime = message.targetSystemTimeMs - clockOffsetMs
+                    onSeekScheduled(message.targetPositionMs, localExecTime)
+                }
                 is SyncMessage.ScheduleSeek -> {
                     val localExecTime = message.hostExecutionEpochMs - clockOffsetMs
                     onSeekScheduled(message.targetPositionMs, localExecTime)

@@ -7,6 +7,12 @@ on:
     branches: [ "**" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  ACTIONS_RUNNER_FORCE_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
