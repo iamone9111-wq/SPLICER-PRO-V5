@@ -44,7 +44,7 @@ class SyncPlaybackController(
                 setVideoTextureView(textureView)
                 addListener(object : Player.Listener {
                     override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                        onVideoSizeChanged(videoSize.width, videoSize.height)
+                        this@SyncPlaybackController.onVideoSizeChanged(videoSize.width, videoSize.height)
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
