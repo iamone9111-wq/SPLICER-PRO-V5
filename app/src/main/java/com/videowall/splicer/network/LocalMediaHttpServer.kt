@@ -54,7 +54,7 @@ class LocalMediaHttpServer(
             val tokenizer = StringTokenizer(requestLine)
             if (!tokenizer.hasMoreTokens()) return
             val method = tokenizer.nextToken()
-            val path = if (tokenizer.hasMoreTokens()) tokenizer.nextToken() else "/"
+            if (tokenizer.hasMoreTokens()) tokenizer.nextToken() // URL path
 
             var rangeHeader: String? = null
             var line: String?

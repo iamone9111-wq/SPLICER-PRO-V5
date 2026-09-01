@@ -20,11 +20,12 @@ object DiscoveryService {
     /**
      * Starts broadcasting the Host IP every 1 second.
      */
-    fun startBroadcasting(scope: CoroutineScope, hostIp: String, tcpPort: Int = 8988): Job {
+    fun startBroadcasting(scope: CoroutineScope, hostIp: String, tcpPort: Int = 8988, context: Context? = null): Job {
         return scope.launch(Dispatchers.IO) {
             var socket: DatagramSocket? = null
             try {
                 socket = DatagramSocket()
+                NetworkUtils.bindDatagramSocketToWifi(socket, context)
                 socket.broadcast = true
                 val message = "$BEACON_PREFIX$hostIp:$tcpPort"
                 val data = message.toByteArray()
@@ -73,6 +74,7 @@ object DiscoveryService {
                 }
 
                 socket = DatagramSocket(DISCOVERY_PORT)
+                NetworkUtils.bindDatagramSocketToWifi(socket, context)
                 socket.broadcast = true
                 socket.soTimeout = 4000
                 val buffer = ByteArray(256)

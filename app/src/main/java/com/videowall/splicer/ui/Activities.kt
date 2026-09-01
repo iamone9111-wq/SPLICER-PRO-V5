@@ -33,6 +33,8 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        NetworkUtils.bindProcessToWifi(this)
+
         // Pre-fill Gateway if connected to Wi-Fi / Hotspot
         val gateway = NetworkUtils.getGatewayIpAddress(this)
         if (binding.inputHostIp.text.isNullOrEmpty()) {
@@ -129,13 +131,15 @@ class HostActivity : AppCompatActivity() {
         setContentView(binding.root)
         hideSystemUI()
 
+        NetworkUtils.bindProcessToWifi(this)
+
         val hostIp = getLocalIpAddress()
         binding.tvHostIp.text = "$hostIp:8988"
         binding.tvConnectedScreensCount.text = "1 Screen Active (Host only)"
         updateLayoutUI()
 
         // Start UDP Discovery Beacon so Client phones discover Host automatically
-        beaconJob = DiscoveryService.startBroadcasting(lifecycleScope, hostIp, 8988)
+        beaconJob = DiscoveryService.startBroadcasting(lifecycleScope, hostIp, 8988, this)
 
         // Start embedded HTTP media server on port 8990 to stream video to all client phones
         mediaServer = LocalMediaHttpServer(this, 8990).apply { start() }
@@ -434,6 +438,7 @@ class ClientActivity : AppCompatActivity() {
         setContentView(binding.root)
         hideSystemUI()
 
+        NetworkUtils.bindProcessToWifi(this)
         currentHostIp = intent.getStringExtra("HOST_IP") ?: "192.168.43.1"
 
         syncController = SyncPlaybackController(this, binding.clientTextureView) { width, height ->
@@ -463,12 +468,14 @@ class ClientActivity : AppCompatActivity() {
     }
 
     private fun startConnection(targetIp: String) {
+        NetworkUtils.bindProcessToWifi(this)
         currentHostIp = targetIp
         binding.cardConnectionError.visibility = View.GONE
         binding.tvScreenIndex.text = "Connecting to $targetIp:8988..."
 
         client?.disconnect()
         client = VideoWallClient(
+            context = this,
             hostIp = targetIp,
             port = 8988,
             fallbackIp = "192.168.43.1",
@@ -509,13 +516,13 @@ class ClientActivity : AppCompatActivity() {
                     binding.layoutClientStatus.visibility = View.GONE
                 }
             },
-            onPause = { positionMs ->
+            onPause = { _ ->
                 runOnUiThread {
                     syncController?.pause()
                     binding.layoutClientStatus.visibility = View.VISIBLE
                 }
             },
-            onSeekScheduled = { targetPositionMs, localExecutionTimeMs ->
+            onSeekScheduled = { targetPositionMs, _ ->
                 syncController?.seekTo(targetPositionMs)
             },
             onSyncOffsetUpdated = { offsetMs, rttMs ->

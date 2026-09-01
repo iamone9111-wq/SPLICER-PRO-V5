@@ -1,7 +1,9 @@
 package com.videowall.splicer.network
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.DhcpInfo
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.text.format.Formatter
 import android.util.Log
@@ -9,7 +11,9 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.Socket
 import java.util.Collections
 
 object NetworkUtils {
@@ -22,10 +26,98 @@ object NetworkUtils {
     )
 
     /**
+     * Binds the application process to the active Wi-Fi or Hotspot network interface.
+     * Prevents Android from routing LAN traffic over Mobile Data (which causes ENETUNREACH).
+     */
+    fun bindProcessToWifi(context: Context?) {
+        if (context == null) return
+        try {
+            val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            for (network in cm.allNetworks) {
+                val caps = cm.getNetworkCapabilities(network) ?: continue
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                    cm.bindProcessToNetwork(network)
+                    Log.d(TAG, "Bound process network routing directly to Wi-Fi/Ethernet Network ($network)")
+                    return
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "bindProcessToWifi failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Explicitly binds a TCP Socket to the Wi-Fi Network or local Wi-Fi interface address,
+     * ensuring it connects to local IPs (like 192.168.43.1) even when Mobile Data is ON.
+     */
+    fun bindSocketToWifi(socket: Socket, context: Context?) {
+        if (context != null) {
+            try {
+                val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                if (cm != null) {
+                    for (network in cm.allNetworks) {
+                        val caps = cm.getNetworkCapabilities(network) ?: continue
+                        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                            network.bindSocket(socket)
+                            Log.d(TAG, "Successfully bound TCP socket to Wi-Fi Network")
+                            return
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "bindSocket to Wi-Fi failed: ${e.message}")
+            }
+        }
+
+        // Secondary fallback: Bind locally to Wi-Fi / Hotspot interface IP
+        try {
+            if (!socket.isBound) {
+                val validIps = getValidLocalIpv4Addresses()
+                val wifiIp = validIps.firstOrNull { it.interfaceName.startsWith("wlan", ignoreCase = true) }
+                    ?: validIps.firstOrNull { it.interfaceName.startsWith("ap", ignoreCase = true) || it.interfaceName.contains("softap", ignoreCase = true) }
+                    ?: validIps.firstOrNull()
+                if (wifiIp != null) {
+                    socket.bind(InetSocketAddress(InetAddress.getByName(wifiIp.ip), 0))
+                    Log.d(TAG, "Bound socket locally to ${wifiIp.ip} (${wifiIp.interfaceName})")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Local IP socket bind fallback failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Explicitly binds a UDP DatagramSocket to the Wi-Fi Network.
+     */
+    fun bindDatagramSocketToWifi(socket: DatagramSocket, context: Context?) {
+        if (context != null) {
+            try {
+                val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                if (cm != null) {
+                    for (network in cm.allNetworks) {
+                        val caps = cm.getNetworkCapabilities(network) ?: continue
+                        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                            network.bindSocket(socket)
+                            Log.d(TAG, "Successfully bound DatagramSocket to Wi-Fi Network")
+                            return
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "bindDatagramSocket to Wi-Fi failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * Resolves the true local IPv4 address of the Android device.
      * Strictly filters out cellular/carrier CGNAT interfaces (like rmnet_data0: 10.x.x.x or 100.x.x.x)
      * so devices always use the Wi-Fi or Hotspot interface for local networking.
      */
+    @Suppress("DEPRECATION")
     fun getLocalIpAddress(context: Context? = null): String {
         val validIps = getValidLocalIpv4Addresses()
         if (validIps.isNotEmpty()) {
@@ -62,6 +154,7 @@ object NetworkUtils {
      * Resolves the gateway IP when this device is a client connected to a Wi-Fi Hotspot.
      * Typically "192.168.43.1" when connected to another Android phone's hotspot.
      */
+    @Suppress("DEPRECATION")
     fun getGatewayIpAddress(context: Context?): String {
         if (context != null) {
             try {

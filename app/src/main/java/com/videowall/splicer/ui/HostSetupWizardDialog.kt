@@ -54,17 +54,10 @@ class HostSetupWizardDialog(
         val btnRemove = root.findViewById<Button>(R.id.btnRemoveScreen)
 
         val rgOrientation = root.findViewById<RadioGroup>(R.id.rgOrientation)
-        val rbHorizontal = root.findViewById<RadioButton>(R.id.rbHorizontal)
-        val rbVertical = root.findViewById<RadioButton>(R.id.rbVertical)
-        val rbGrid = root.findViewById<RadioButton>(R.id.rbGrid)
-
         val tvArrangement = root.findViewById<TextView>(R.id.tvArrangementSummary)
         val btnIdentify = root.findViewById<Button>(R.id.btnIdentifyScreens)
 
         val rgScaleMode = root.findViewById<RadioGroup>(R.id.rgScaleMode)
-        val rbCover = root.findViewById<RadioButton>(R.id.rbCover)
-        val rbContain = root.findViewById<RadioButton>(R.id.rbContain)
-        val rbStretch = root.findViewById<RadioButton>(R.id.rbStretch)
 
         val btnBack = root.findViewById<Button>(R.id.btnBack)
         val btnNext = root.findViewById<Button>(R.id.btnNext)
@@ -92,8 +85,8 @@ class HostSetupWizardDialog(
         // Step 2 logic
         rgOrientation.setOnCheckedChangeListener { _, checkedId ->
             orientation = when (checkedId) {
-                rbVertical.id -> WallOrientation.VERTICAL
-                rbGrid.id -> WallOrientation.GRID
+                R.id.rbVertical -> WallOrientation.VERTICAL
+                R.id.rbGrid -> WallOrientation.GRID
                 else -> WallOrientation.HORIZONTAL
             }
             updateGeometry()
@@ -107,8 +100,8 @@ class HostSetupWizardDialog(
         // Step 4 logic
         rgScaleMode.setOnCheckedChangeListener { _, checkedId ->
             scaleMode = when (checkedId) {
-                rbContain.id -> ScaleMode.CONTAIN
-                rbStretch.id -> ScaleMode.STRETCH
+                R.id.rbContain -> ScaleMode.CONTAIN
+                R.id.rbStretch -> ScaleMode.STRETCH
                 else -> ScaleMode.COVER
             }
         }

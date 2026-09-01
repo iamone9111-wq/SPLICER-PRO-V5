@@ -1,5 +1,6 @@
 package com.videowall.splicer.network
 
+import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.*
@@ -10,6 +11,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 
 class VideoWallClient(
+    private val context: Context? = null,
     private var hostIp: String,
     private val port: Int = 8988,
     private val fallbackIp: String? = "192.168.43.1",
@@ -56,6 +58,7 @@ class VideoWallClient(
     private suspend fun tryConnect(targetIp: String): Boolean {
         return try {
             val s = Socket()
+            NetworkUtils.bindSocketToWifi(s, context)
             s.connect(InetSocketAddress(targetIp, port), 4500)
             socket = s
             writer = PrintWriter(s.getOutputStream(), true)

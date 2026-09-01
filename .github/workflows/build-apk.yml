@@ -13,8 +13,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ACTIONS_RUNNER_FORCE_NODE24: "true"
 
     steps:
     - name: Checkout Repository
