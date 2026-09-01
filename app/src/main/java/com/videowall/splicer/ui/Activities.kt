@@ -2,6 +2,7 @@ package com.videowall.splicer.ui
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -77,7 +78,7 @@ class MainActivity : AppCompatActivity() {
     private fun startAutoDiscovery() {
         discoveryJob = DiscoveryService.startListening(this, lifecycleScope) { hostIp, _ ->
             binding.tvAutoDiscoveryStatus.text = "✨ Discovered Host at: $hostIp"
-            binding.tvAutoDiscoveryStatus.setTextColor(0xFF34D399.toInt()) // Emerald Green
+            binding.tvAutoDiscoveryStatus.setTextColor(Color.parseColor("#34D399")) // Emerald Green
             if (binding.inputHostIp.text.toString() == "192.168.43.1" || binding.inputHostIp.text.toString().isEmpty()) {
                 binding.inputHostIp.setText(hostIp)
             }
@@ -340,10 +341,10 @@ class HostActivity : AppCompatActivity() {
                 val displayScreenNum = index + 1
                 if (index == 0) {
                     tvTitle.text = "Screen 1 (Host)"
-                    tile.setBackgroundColor(0xFF4F46E5.toInt()) // Indigo
+                    tile.setBackgroundColor(Color.parseColor("#4F46E5")) // Indigo
                 } else {
                     tvTitle.text = "Screen $displayScreenNum"
-                    tile.setBackgroundColor(0xFF1E293B.toInt()) // Slate
+                    tile.setBackgroundColor(Color.parseColor("#1E293B")) // Slate
                 }
                 tvCoord.text = "[R$r:C$c]"
                 
