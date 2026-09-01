@@ -1372,10 +1372,10 @@ class HostActivity : AppCompatActivity() {
                 val displayScreenNum = index + 1
                 if (index == 0) {
                     tvTitle.text = "Screen 1 (Host)"
-                    tile.setBackgroundColor(0xFF4F46E5.toInt())
+                    tile.setBackgroundColor(android.graphics.Color.parseColor("#4F46E5"))
                 } else {
                     tvTitle.text = "Screen \$displayScreenNum"
-                    tile.setBackgroundColor(0xFF1E293B.toInt())
+                    tile.setBackgroundColor(android.graphics.Color.parseColor("#1E293B"))
                 }
                 tvCoord.text = "[R\$r:C\$c]"
                 
