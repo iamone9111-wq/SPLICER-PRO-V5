@@ -138,13 +138,13 @@ class VideoWallServer(
         }
     }
 
-    private fun rebuildDefaultSlots(total: Int, orient: WallOrientation, c: Int) {
+    private fun rebuildDefaultSlots(total: Int, orient: WallOrientation, rows: Int = gridRows, cols: Int = gridCols) {
         slotAssignments.clear()
         for (i in 0 until total) {
             val (row, col) = when (orient) {
                 WallOrientation.HORIZONTAL -> Pair(0, i)
                 WallOrientation.VERTICAL -> Pair(i, 0)
-                WallOrientation.GRID -> Pair(i / c.coerceAtLeast(1), i % c.coerceAtLeast(1))
+                WallOrientation.GRID -> Pair(i / cols.coerceAtLeast(1), i % cols.coerceAtLeast(1))
             }
             slotAssignments[i] = ScreenSlot(deviceIndex = i, row = row, col = col)
         }
@@ -152,7 +152,7 @@ class VideoWallServer(
 
     fun broadcastRoleAssignments() {
         val totalScreens = maxOf(configuredScreenCount, connectedClients.size + 1)
-        rebuildDefaultSlots(totalScreens, currentOrientation, gridCols)
+        rebuildDefaultSlots(totalScreens, currentOrientation, gridRows, gridCols)
 
         connectedClients.forEachIndexed { index, client ->
             val clientIndex = index + 1 // Host is 0 (Screen 1), Clients are 1..N (Screens 2..N+1)
