@@ -15,7 +15,7 @@ import { simulateNtpExchange, VideoWallBroadcastBus } from '../../utils/syncEngi
 const PRESET_VIDEOS: VideoSourceOption[] = [
   {
     id: 'test-pattern',
-    title: 'Sync Calibration Matrix & Clock',
+    title: '16:9 Calibration Grid & Sync Clock (1920×1080)',
     url: '',
     width: 1920,
     height: 1080,
@@ -25,7 +25,7 @@ const PRESET_VIDEOS: VideoSourceOption[] = [
   },
   {
     id: 'video-nature',
-    title: 'Cinematic Mountain Drone (1080p)',
+    title: '16:9 Cinematic Mountain Drone (1920×1080)',
     url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
     width: 1920,
     height: 1080,
@@ -33,17 +33,17 @@ const PRESET_VIDEOS: VideoSourceOption[] = [
     thumbnail: ''
   },
   {
-    id: 'video-ocean',
-    title: 'Deep Ocean Bioluminescence',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    width: 1920,
-    height: 1080,
-    duration: 653,
+    id: 'video-vertical-short',
+    title: '9:16 Portrait Reel / Shorts (1080×1920)',
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    width: 1080,
+    height: 1920,
+    duration: 15,
     thumbnail: ''
   },
   {
     id: 'video-tech',
-    title: 'Tech Blender Animation',
+    title: '16:9 Sci-Fi Cyberpunk Render (1920×1080)',
     url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
     width: 1920,
     height: 1080,

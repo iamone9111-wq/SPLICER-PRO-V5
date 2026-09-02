@@ -45,7 +45,11 @@ class SyncPlaybackController(
                 setVideoTextureView(textureView)
                 addListener(object : Player.Listener {
                     override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                        this@SyncPlaybackController.onVideoSizeChanged(videoSize.width, videoSize.height)
+                        val rotation = videoSize.unappliedRotationDegrees
+                        val realW = if (rotation == 90 || rotation == 270) videoSize.height else videoSize.width
+                        val realH = if (rotation == 90 || rotation == 270) videoSize.width else videoSize.height
+                        Log.d(tag, "VideoSize changed: raw=${videoSize.width}x${videoSize.height}, rot=$rotation -> effective=${realW}x${realH}")
+                        this@SyncPlaybackController.onVideoSizeChanged(realW, realH)
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {

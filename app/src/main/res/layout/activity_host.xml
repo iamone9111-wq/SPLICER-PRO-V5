@@ -403,14 +403,14 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Row 4: Aspect Ratio & Appearance -->
+            <!-- Row 4: Device Placement & Appearance -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:layout_marginBottom="16dp">
 
-                <!-- Aspect Ratio -->
+                <!-- Device Placement (Vertical vs Horizontal) -->
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -423,26 +423,26 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="ASPECT RATIO"
+                        android:text="DEVICE PLACEMENT"
                         android:textColor="#64748B"
                         android:textSize="10sp"
                         android:textStyle="bold"
                         android:layout_marginBottom="4dp" />
 
                     <Button
-                        android:id="@+id/btnAspectRatio"
+                        android:id="@+id/btnDevicePlacement"
                         android:layout_width="match_parent"
                         android:layout_height="38dp"
-                        android:text="Toggle Ratio"
+                        android:text="Switch Orientation"
                         android:textSize="11sp"
                         android:backgroundTint="#1E293B"
                         android:textColor="#CBD5E1" />
 
                     <TextView
-                        android:id="@+id/tvAspectRatio"
+                        android:id="@+id/tvDevicePlacement"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="16:9 Landscape"
+                        android:text="📱 Placed Horizontally (Landscape)"
                         android:textColor="#38BDF8"
                         android:textSize="11sp"
                         android:gravity="center"

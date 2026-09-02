@@ -42,6 +42,8 @@ class VideoWallServer(
         private set
     var currentScaleMode: ScaleMode = ScaleMode.COVER
         private set
+    var deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
+        private set
     var currentMediaUri: String? = null
         private set
     var videoWidth: Int = 1920
@@ -89,7 +91,8 @@ class VideoWallServer(
         scaleMode: ScaleMode = ScaleMode.COVER,
         mediaUri: String? = null,
         videoWidth: Int = 1920,
-        videoHeight: Int = 1080
+        videoHeight: Int = 1080,
+        deviceOrientation: DeviceOrientation = this.deviceOrientation
     ) {
         gridRows = rows
         gridCols = cols
@@ -98,6 +101,7 @@ class VideoWallServer(
         if (mediaUri != null) currentMediaUri = mediaUri
         this.videoWidth = videoWidth
         this.videoHeight = videoHeight
+        this.deviceOrientation = deviceOrientation
 
         rebuildDefaultSlots(configuredScreenCount, currentOrientation, rows, cols)
         broadcastRoleAssignments()
@@ -111,7 +115,8 @@ class VideoWallServer(
         scaleMode: ScaleMode = ScaleMode.COVER,
         mediaUri: String? = null,
         width: Int = videoWidth,
-        height: Int = videoHeight
+        height: Int = videoHeight,
+        deviceOrientation: DeviceOrientation = this.deviceOrientation
     ) {
         configuredScreenCount = screenCount
         currentOrientation = orientation
@@ -121,6 +126,7 @@ class VideoWallServer(
         if (mediaUri != null) currentMediaUri = mediaUri
         videoWidth = width
         videoHeight = height
+        this.deviceOrientation = deviceOrientation
 
         rebuildDefaultSlots(screenCount, orientation, rows, cols)
         broadcastRoleAssignments()
@@ -167,6 +173,7 @@ class VideoWallServer(
                     deviceIndex = clientIndex,
                     totalDevices = totalScreens,
                     orientation = currentOrientation,
+                    deviceOrientation = deviceOrientation,
                     row = slot.row,
                     col = slot.col,
                     totalRows = gridRows,
@@ -189,11 +196,12 @@ class VideoWallServer(
         }
     }
 
-    fun broadcastPlay(startPositionMs: Long, targetTimeEpochMs: Long) {
+    fun broadcastPlay(startPositionMs: Long, targetTimeEpochMs: Long, deviceOrientation: DeviceOrientation = this.deviceOrientation) {
         val message = SyncMessage.SchedulePlay(
             startPositionMs = startPositionMs,
             targetSystemTimeMs = targetTimeEpochMs,
-            hostExecutionEpochMs = targetTimeEpochMs
+            hostExecutionEpochMs = targetTimeEpochMs,
+            deviceOrientation = deviceOrientation
         )
         connectedClients.forEach { it.sendMessage(message) }
     }

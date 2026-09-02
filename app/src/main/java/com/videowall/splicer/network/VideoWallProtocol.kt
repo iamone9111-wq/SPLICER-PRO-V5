@@ -14,6 +14,12 @@ enum class WallOrientation {
 }
 
 @Serializable
+enum class DeviceOrientation {
+    VERTICAL,   // 📱 Devices physically placed Vertically (Standing upright / Portrait mode)
+    HORIZONTAL  // 📱 Devices physically placed Horizontally (Lying sideways / Landscape mode)
+}
+
+@Serializable
 enum class ScaleMode {
     COVER,      // Full bleed zoom, no black borders
     CONTAIN,    // Entire video visible with letterbox/pillarbox
@@ -53,6 +59,7 @@ sealed class SyncMessage {
         val deviceIndex: Int,
         val totalDevices: Int,
         val orientation: WallOrientation = WallOrientation.HORIZONTAL,
+        val deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL,
         val row: Int = 0,
         val col: Int = 0,
         val totalRows: Int = 1,
@@ -101,7 +108,8 @@ sealed class SyncMessage {
     data class SchedulePlay(
         val startPositionMs: Long = 0L,
         val targetSystemTimeMs: Long = 0L,
-        val hostExecutionEpochMs: Long = 0L
+        val hostExecutionEpochMs: Long = 0L,
+        val deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
     ) : SyncMessage()
 
     /**

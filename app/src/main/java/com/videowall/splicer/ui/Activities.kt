@@ -3,6 +3,7 @@ package com.videowall.splicer.ui
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -110,18 +111,55 @@ class HostActivity : AppCompatActivity() {
     private var screenCount: Int = 1
     private var gridRows: Int = 1
     private var gridCols: Int = 1
-    private var scaleMode: ScaleMode = ScaleMode.COVER
-    private var currentAspectRatioIndex: Int = 0
-    private val aspectRatios = listOf("16:9 Landscape", "9:16 Portrait", "4:3 Standard", "1:1 Square", "Auto")
+    private var scaleMode: ScaleMode = ScaleMode.CONTAIN
+    private var deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
 
     private val videoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             selectedVideoUri = it
             mediaServer?.setMediaUri(it)
-            binding.tvSelectedVideo.text = it.lastPathSegment ?: "Video Selected"
+            extractAndApplyVideoMetadata(it)
             syncController?.prepareMedia(it)
-            broadcastConfiguration()
             Toast.makeText(this, "🎬 Video loaded & ready to stream to all screens", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun extractAndApplyVideoMetadata(uri: Uri) {
+        try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(this, uri)
+            val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            val rotStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            retriever.release()
+
+            val rawW = wStr?.toIntOrNull() ?: 1920
+            val rawH = hStr?.toIntOrNull() ?: 1080
+            val rot = rotStr?.toIntOrNull() ?: 0
+
+            val actualW = if (rot == 90 || rot == 270) rawH else rawW
+            val actualH = if (rot == 90 || rot == 270) rawW else rawH
+
+            videoWidth = actualW
+            videoHeight = actualH
+
+            val ratioText = when {
+                actualW == actualH -> "1:1 Square"
+                actualW * 9 == actualH * 16 -> "16:9 Landscape"
+                actualW * 16 == actualH * 9 -> "9:16 Portrait"
+                actualW * 3 == actualH * 4 -> "4:3 Standard"
+                actualW * 4 == actualH * 3 -> "3:4 Portrait"
+                actualW > actualH -> String.format("%.2f:1 Landscape", actualW.toFloat() / actualH)
+                else -> String.format("1:%.2f Portrait", actualH.toFloat() / actualW)
+            }
+
+            binding.tvSelectedVideo.text = "🎬 ${actualW}×${actualH} ($ratioText) • Stream Ready"
+            updateMatrix()
+            broadcastConfiguration()
+        } catch (e: Exception) {
+            Log.e("HostActivity", "Error extracting video metadata: ${e.message}")
+            binding.tvSelectedVideo.text = uri.lastPathSegment ?: "Video Selected"
+            broadcastConfiguration()
         }
     }
 
@@ -136,6 +174,7 @@ class HostActivity : AppCompatActivity() {
         val hostIp = getLocalIpAddress()
         binding.tvHostIp.text = "$hostIp:8988"
         binding.tvConnectedScreensCount.text = "1 Screen Active (Host only)"
+        binding.tvAppearance.text = "🎯 REAL RATIO (Fit)"
         updateLayoutUI()
 
         // Start UDP Discovery Beacon so Client phones discover Host automatically
@@ -144,11 +183,29 @@ class HostActivity : AppCompatActivity() {
         // Start embedded HTTP media server on port 8990 to stream video to all client phones
         mediaServer = LocalMediaHttpServer(this, 8990).apply { start() }
 
-        syncController = SyncPlaybackController(this, binding.hostTextureView) { width, height ->
-            videoWidth = width
-            videoHeight = height
+        binding.hostTextureView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateMatrix()
-            broadcastConfiguration()
+        }
+
+        syncController = SyncPlaybackController(this, binding.hostTextureView) { width, height ->
+            if (width > 0 && height > 0) {
+                videoWidth = width
+                videoHeight = height
+                runOnUiThread {
+                    val ratioText = when {
+                        width == height -> "1:1 Square"
+                        width * 9 == height * 16 -> "16:9 Landscape"
+                        width * 16 == height * 9 -> "9:16 Portrait"
+                        width * 3 == height * 4 -> "4:3 Standard"
+                        width * 4 == height * 3 -> "3:4 Portrait"
+                        width > height -> String.format("%.2f:1 Landscape", width.toFloat() / height)
+                        else -> String.format("1:%.2f Portrait", height.toFloat() / width)
+                    }
+                    binding.tvSelectedVideo.text = "🎬 ${width}×${height} ($ratioText) • Stream Ready"
+                    updateMatrix()
+                    broadcastConfiguration()
+                }
+            }
         }
 
         server = VideoWallServer(
@@ -262,18 +319,39 @@ class HostActivity : AppCompatActivity() {
             }
         }
 
-        // Aspect Ratio Toggle
-        binding.btnAspectRatio.setOnClickListener {
-            currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size
-            binding.tvAspectRatio.text = aspectRatios[currentAspectRatioIndex]
+        // Device Placement Toggle (Vertical / Horizontal)
+        binding.btnDevicePlacement.setOnClickListener {
+            deviceOrientation = if (deviceOrientation == DeviceOrientation.HORIZONTAL) {
+                DeviceOrientation.VERTICAL
+            } else {
+                DeviceOrientation.HORIZONTAL
+            }
+            binding.tvDevicePlacement.text = if (deviceOrientation == DeviceOrientation.HORIZONTAL) {
+                "📱 Placed Horizontally (Landscape)"
+            } else {
+                "📱 Placed Vertically (Portrait)"
+            }
+            updateLayoutUI()
             updateMatrix()
             broadcastConfiguration()
+            val msg = if (deviceOrientation == DeviceOrientation.HORIZONTAL) "Horizontal (Landscape) placement selected" else "Vertical (Portrait) placement selected"
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
 
-        // Scale Mode Toggle (Cover / Fit)
+        // Scale Mode Toggle (Real Ratio / Full Wall Cover / Stretch)
         binding.btnAppearance.setOnClickListener {
-            scaleMode = if (scaleMode == ScaleMode.COVER) ScaleMode.FIT else ScaleMode.COVER
-            binding.tvAppearance.text = if (scaleMode == ScaleMode.COVER) "COVER (Full)" else "FIT (Letterbox)"
+            scaleMode = when (scaleMode) {
+                ScaleMode.CONTAIN -> ScaleMode.COVER
+                ScaleMode.COVER -> ScaleMode.STRETCH
+                ScaleMode.STRETCH -> ScaleMode.CONTAIN
+                else -> ScaleMode.CONTAIN
+            }
+            binding.tvAppearance.text = when (scaleMode) {
+                ScaleMode.CONTAIN -> "🎯 REAL RATIO (Fit)"
+                ScaleMode.COVER -> "🖼️ FULL WALL (Cover)"
+                ScaleMode.STRETCH -> "📐 STRETCH (Fill)"
+                else -> "🎯 REAL RATIO (Fit)"
+            }
             updateMatrix()
             broadcastConfiguration()
         }
@@ -288,13 +366,13 @@ class HostActivity : AppCompatActivity() {
             } else {
                 val execTime = SystemClock.elapsedRealtime() + 300L
                 syncController?.schedulePlay(syncController?.currentPositionMs ?: 0L, execTime)
-                server?.broadcastPlay(syncController?.currentPositionMs ?: 0L, execTime)
+                server?.broadcastPlay(syncController?.currentPositionMs ?: 0L, execTime, deviceOrientation)
                 binding.btnFloatingPause.text = "⏸ Pause"
             }
         }
 
         binding.btnExitImmersion.setOnClickListener {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             binding.immersionOverlayControls.visibility = View.GONE
             binding.hostSettingsScrollView.visibility = View.VISIBLE
             hideSystemUI()
@@ -307,14 +385,22 @@ class HostActivity : AppCompatActivity() {
             return
         }
 
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        if (deviceOrientation == DeviceOrientation.VERTICAL) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+
         binding.hostSettingsScrollView.visibility = View.GONE
         binding.immersionOverlayControls.visibility = View.VISIBLE
         hideSystemUI()
 
         val executionEpoch = SystemClock.elapsedRealtime() + 400L
         syncController?.schedulePlay(0L, executionEpoch)
-        server?.broadcastPlay(0L, executionEpoch)
+        server?.broadcastPlay(0L, executionEpoch, deviceOrientation)
+        binding.hostTextureView.post {
+            updateMatrix()
+        }
         Toast.makeText(this, "🚀 Synchronized playback started on $screenCount screens!", Toast.LENGTH_SHORT).show()
     }
 
@@ -322,7 +408,8 @@ class HostActivity : AppCompatActivity() {
         binding.tvTotalScreensValue.text = screenCount.toString()
         binding.tvRowsValue.text = gridRows.toString()
         binding.tvColsValue.text = gridCols.toString()
-        binding.tvLiveWallDimensions.text = "${gridRows}R × ${gridCols}C ($screenCount SCREENS)"
+        val orientLabel = if (deviceOrientation == DeviceOrientation.HORIZONTAL) "Landscape" else "Portrait"
+        binding.tvLiveWallDimensions.text = "${gridRows}R × ${gridCols}C ($screenCount SCREENS • $orientLabel)"
 
         // Update visual wall preview tiles
         binding.liveWallGridContainer.removeAllViews()
@@ -391,7 +478,8 @@ class HostActivity : AppCompatActivity() {
             scaleMode = scaleMode,
             mediaUri = httpStreamUrl,
             videoWidth = videoWidth,
-            videoHeight = videoHeight
+            videoHeight = videoHeight,
+            deviceOrientation = deviceOrientation
         )
     }
 
@@ -431,6 +519,7 @@ class ClientActivity : AppCompatActivity() {
     private var videoHeight: Int = 1080
     private var currentRole: SyncMessage.AssignRole? = null
     private var currentHostIp: String = "192.168.43.1"
+    private var currentDeviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -441,10 +530,18 @@ class ClientActivity : AppCompatActivity() {
         NetworkUtils.bindProcessToWifi(this)
         currentHostIp = intent.getStringExtra("HOST_IP") ?: "192.168.43.1"
 
-        syncController = SyncPlaybackController(this, binding.clientTextureView) { width, height ->
-            videoWidth = width
-            videoHeight = height
+        binding.clientTextureView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             currentRole?.let { applyMatrix(it) }
+        }
+
+        syncController = SyncPlaybackController(this, binding.clientTextureView) { width, height ->
+            if (width > 0 && height > 0) {
+                videoWidth = width
+                videoHeight = height
+                runOnUiThread {
+                    currentRole?.let { applyMatrix(it) }
+                }
+            }
         }
 
         setupErrorCardButtons()
@@ -495,13 +592,24 @@ class ClientActivity : AppCompatActivity() {
             },
             onRoleAssigned = { role ->
                 currentRole = role
+                currentDeviceOrientation = role.deviceOrientation
+                if (role.videoWidth > 0 && role.videoHeight > 0) {
+                    videoWidth = role.videoWidth
+                    videoHeight = role.videoHeight
+                }
                 val screenNum = role.deviceIndex + 1
                 runOnUiThread {
-                    binding.tvScreenIndex.text = "Screen #$screenNum of ${role.totalDevices} (Row ${role.row + 1}, Col ${role.col + 1})"
+                    if (role.deviceOrientation == DeviceOrientation.VERTICAL) {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    } else {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    }
+                    val orientText = if (role.deviceOrientation == DeviceOrientation.VERTICAL) "Vertical (Portrait)" else "Horizontal (Landscape)"
+                    binding.tvScreenIndex.text = "Screen #$screenNum of ${role.totalDevices} (Row ${role.row + 1}, Col ${role.col + 1}) • $orientText"
                     binding.tvIdentifyBigNumber.text = "$screenNum"
-                    Toast.makeText(this@ClientActivity, "📱 Configured as Screen #$screenNum of ${role.totalDevices}", Toast.LENGTH_SHORT).show()
+                    applyMatrix(role)
+                    Toast.makeText(this@ClientActivity, "📱 Screen #$screenNum • Placed $orientText", Toast.LENGTH_SHORT).show()
                 }
-                applyMatrix(role)
             },
             onMediaPrepared = { media ->
                 runOnUiThread {
@@ -511,9 +619,16 @@ class ClientActivity : AppCompatActivity() {
             },
             onPlayScheduled = { startPositionMs, localExecutionTimeMs ->
                 runOnUiThread {
-                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    if (currentDeviceOrientation == DeviceOrientation.VERTICAL) {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    } else {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    }
                     syncController?.schedulePlay(startPositionMs, localExecutionTimeMs)
                     binding.layoutClientStatus.visibility = View.GONE
+                    binding.clientTextureView.post {
+                        currentRole?.let { applyMatrix(it) }
+                    }
                 }
             },
             onPause = { _ ->
@@ -545,6 +660,8 @@ class ClientActivity : AppCompatActivity() {
     private fun applyMatrix(role: SyncMessage.AssignRole) {
         val viewW = binding.clientTextureView.width.toFloat()
         val viewH = binding.clientTextureView.height.toFloat()
+        val vW = if (role.videoWidth > 0) role.videoWidth else videoWidth
+        val vH = if (role.videoHeight > 0) role.videoHeight else videoHeight
         if (viewW > 0 && viewH > 0) {
             MatrixTransformHelper.applySpliceTransform(
                 textureView = binding.clientTextureView,
@@ -553,8 +670,8 @@ class ClientActivity : AppCompatActivity() {
                 totalRows = role.totalRows,
                 totalCols = role.totalCols,
                 scaleMode = role.scaleMode,
-                videoWidth = videoWidth,
-                videoHeight = videoHeight,
+                videoWidth = vW,
+                videoHeight = vH,
                 viewWidth = viewW,
                 viewHeight = viewH,
                 rotationDeg = role.rotationDeg

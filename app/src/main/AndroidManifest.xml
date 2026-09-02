@@ -42,7 +42,6 @@
         <activity
             android:name=".ui.HostActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:keepScreenOn="true" />
 
@@ -51,7 +50,6 @@
             android:name=".ui.ClientActivity"
             android:exported="false"
             android:hardwareAccelerated="true"
-            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:keepScreenOn="true"
             android:theme="@style/Theme.VideoWallSplicer.Fullscreen" />
