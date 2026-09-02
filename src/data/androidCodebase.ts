@@ -227,12 +227,15 @@ sealed class SyncMessage {
         val deviceIndex: Int,
         val totalDevices: Int,
         val orientation: WallOrientation = WallOrientation.HORIZONTAL,
+        val deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL,
         val row: Int = 0,
         val col: Int = 0,
         val totalRows: Int = 1,
         val totalCols: Int = 1,
         val scaleMode: ScaleMode = ScaleMode.COVER,
-        val rotationDeg: Int = 0
+        val rotationDeg: Int = 0,
+        val videoWidth: Int = 1920,
+        val videoHeight: Int = 1080
     ) : SyncMessage()
 
     /**
@@ -512,12 +515,15 @@ class VideoWallServer(
                     deviceIndex = clientIndex,
                     totalDevices = totalScreens,
                     orientation = currentOrientation,
+                    deviceOrientation = deviceOrientation,
                     row = slot.row,
                     col = slot.col,
                     totalRows = gridRows,
                     totalCols = gridCols,
                     scaleMode = currentScaleMode,
-                    rotationDeg = slot.rotationDeg
+                    rotationDeg = slot.rotationDeg,
+                    videoWidth = videoWidth,
+                    videoHeight = videoHeight
                 )
             )
 

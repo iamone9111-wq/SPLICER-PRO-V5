@@ -179,7 +179,9 @@ class VideoWallServer(
                     totalRows = gridRows,
                     totalCols = gridCols,
                     scaleMode = currentScaleMode,
-                    rotationDeg = slot.rotationDeg
+                    rotationDeg = slot.rotationDeg,
+                    videoWidth = videoWidth,
+                    videoHeight = videoHeight
                 )
             )
 

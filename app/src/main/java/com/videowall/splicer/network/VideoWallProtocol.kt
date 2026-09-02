@@ -65,7 +65,9 @@ sealed class SyncMessage {
         val totalRows: Int = 1,
         val totalCols: Int = 1,
         val scaleMode: ScaleMode = ScaleMode.COVER,
-        val rotationDeg: Int = 0
+        val rotationDeg: Int = 0,
+        val videoWidth: Int = 1920,
+        val videoHeight: Int = 1080
     ) : SyncMessage()
 
     /**
