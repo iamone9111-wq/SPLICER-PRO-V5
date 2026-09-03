@@ -122,6 +122,7 @@ class HostActivity : AppCompatActivity() {
     private var deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
     private var bezelPercent: Float = 3.5f
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var activeVideoSource: String = "file"
 
     private val videoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -514,7 +515,12 @@ class HostActivity : AppCompatActivity() {
 
     private fun startImmersionPlayback() {
         if (selectedVideoUri == null) {
-            Toast.makeText(this, "Please select a video file first", Toast.LENGTH_SHORT).show()
+            val msg = if (activeVideoSource == "youtube") {
+                "Please enter and load a YouTube video URL first"
+            } else {
+                "Please select a video file first"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
             return
         }
 
