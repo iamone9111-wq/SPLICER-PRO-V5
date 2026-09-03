@@ -20,6 +20,7 @@ object MatrixTransformHelper {
      * @param videoHeight Original height of the video in pixels.
      * @param viewWidth Width of this device's TextureView in pixels.
      * @param viewHeight Height of this device's TextureView in pixels.
+     * @param bezelPercent Bezel thickness percentage for seamless multi-device continuity.
      * @param rotationDeg Optional hardware rotation (0, 90, 180, 270).
      */
     fun applySpliceTransform(
@@ -33,19 +34,26 @@ object MatrixTransformHelper {
         videoHeight: Int,
         viewWidth: Float,
         viewHeight: Float,
+        bezelPercent: Float = 3.5f,
         rotationDeg: Int = 0
     ): Matrix {
         if (viewWidth <= 0 || viewHeight <= 0 || totalRows <= 0 || totalCols <= 0) return Matrix()
 
         val matrix = Matrix()
 
-        // Total virtual video wall display area across all physical screens
-        val totalWallWidth = viewWidth * totalCols
-        val totalWallHeight = viewHeight * totalRows
+        // Mobile bezel compensation: treats physical bezels as part of one continuous large screen
+        val safeBezel = bezelPercent.coerceAtLeast(0f)
+        val bezelWidth = if (totalCols > 1) viewWidth * (safeBezel / 100f) else 0f
+        val bezelHeight = if (totalRows > 1) viewHeight * (safeBezel / 100f) else 0f
+
+        // Total virtual video wall display area across all physical screens and bezels
+        val totalWallWidth = (viewWidth * totalCols) + (bezelWidth * (totalCols - 1))
+        val totalWallHeight = (viewHeight * totalRows) + (bezelHeight * (totalRows - 1))
 
         val vWidth = if (videoWidth > 0) videoWidth.toFloat() else totalWallWidth
         val vHeight = if (videoHeight > 0) videoHeight.toFloat() else totalWallHeight
 
+        // Play video strictly according to video's original aspect ratio onto the unified virtual screen
         val videoAspect = vWidth / vHeight
         val wallAspect = totalWallWidth / totalWallHeight
 
@@ -62,7 +70,7 @@ object MatrixTransformHelper {
                 fitOffsetY = 0f
             }
             ScaleMode.CONTAIN, ScaleMode.FIT -> {
-                // Entire video must be visible; letterbox or pillarbox virtual wall
+                // Entire video must be visible; letterbox or pillarbox across the unified large wall
                 if (videoAspect > wallAspect) {
                     fittedWallHeight = totalWallWidth / videoAspect
                     fitOffsetY = (totalWallHeight - fittedWallHeight) / 2f
@@ -72,7 +80,7 @@ object MatrixTransformHelper {
                 }
             }
             ScaleMode.COVER -> {
-                // Video covers the entire wall without black bars; crops excess
+                // Video covers the entire unified wall without black bars, cropping excess symmetrically
                 if (videoAspect > wallAspect) {
                     fittedWallWidth = totalWallHeight * videoAspect
                     fitOffsetX = (totalWallWidth - fittedWallWidth) / 2f
@@ -87,9 +95,12 @@ object MatrixTransformHelper {
         val scaleX = fittedWallWidth / viewWidth
         val scaleY = fittedWallHeight / viewHeight
 
-        // Shift viewport based on this device's column and row slot in the wall
-        val translateX = -(col * viewWidth) + fitOffsetX
-        val translateY = -(row * viewHeight) + fitOffsetY
+        // Physical placement offset on the unified virtual wall (including bezels)
+        val deviceLeftOnWall = col * (viewWidth + bezelWidth)
+        val deviceTopOnWall = row * (viewHeight + bezelHeight)
+
+        val translateX = fitOffsetX - deviceLeftOnWall
+        val translateY = fitOffsetY - deviceTopOnWall
 
         matrix.setScale(scaleX, scaleY, 0f, 0f)
         matrix.postTranslate(translateX, translateY)

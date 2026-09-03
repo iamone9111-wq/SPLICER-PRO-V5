@@ -67,7 +67,8 @@ sealed class SyncMessage {
         val scaleMode: ScaleMode = ScaleMode.COVER,
         val rotationDeg: Int = 0,
         val videoWidth: Int = 1920,
-        val videoHeight: Int = 1080
+        val videoHeight: Int = 1080,
+        val bezelPercent: Float = 3.5f
     ) : SyncMessage()
 
     /**
@@ -111,7 +112,8 @@ sealed class SyncMessage {
         val startPositionMs: Long = 0L,
         val targetSystemTimeMs: Long = 0L,
         val hostExecutionEpochMs: Long = 0L,
-        val deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
+        val deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL,
+        val bezelPercent: Float = 3.5f
     ) : SyncMessage()
 
     /**

@@ -50,6 +50,8 @@ class VideoWallServer(
         private set
     var videoHeight: Int = 1080
         private set
+    var bezelPercent: Float = 3.5f
+        private set
 
     init {
         // Default 1x3 horizontal wall
@@ -92,7 +94,8 @@ class VideoWallServer(
         mediaUri: String? = null,
         videoWidth: Int = 1920,
         videoHeight: Int = 1080,
-        deviceOrientation: DeviceOrientation = this.deviceOrientation
+        deviceOrientation: DeviceOrientation = this.deviceOrientation,
+        bezelPercent: Float = this.bezelPercent
     ) {
         gridRows = rows
         gridCols = cols
@@ -102,6 +105,7 @@ class VideoWallServer(
         this.videoWidth = videoWidth
         this.videoHeight = videoHeight
         this.deviceOrientation = deviceOrientation
+        this.bezelPercent = bezelPercent
 
         rebuildDefaultSlots(configuredScreenCount, currentOrientation, rows, cols)
         broadcastRoleAssignments()
@@ -181,7 +185,8 @@ class VideoWallServer(
                     scaleMode = currentScaleMode,
                     rotationDeg = slot.rotationDeg,
                     videoWidth = videoWidth,
-                    videoHeight = videoHeight
+                    videoHeight = videoHeight,
+                    bezelPercent = bezelPercent
                 )
             )
 
@@ -198,22 +203,35 @@ class VideoWallServer(
         }
     }
 
-    fun broadcastPlay(startPositionMs: Long, targetTimeEpochMs: Long, deviceOrientation: DeviceOrientation = this.deviceOrientation) {
+    fun broadcastPlay(
+        startPositionMs: Long,
+        targetTimeEpochMs: Long,
+        deviceOrientation: DeviceOrientation = this.deviceOrientation,
+        bezelPercent: Float = this.bezelPercent
+    ) {
         val message = SyncMessage.SchedulePlay(
             startPositionMs = startPositionMs,
             targetSystemTimeMs = targetTimeEpochMs,
             hostExecutionEpochMs = targetTimeEpochMs,
-            deviceOrientation = deviceOrientation
+            deviceOrientation = deviceOrientation,
+            bezelPercent = bezelPercent
         )
         connectedClients.forEach { it.sendMessage(message) }
     }
 
-    fun broadcastSchedulePlay(startPositionMs: Long, executionDelayMs: Long = 500L): Long {
+    fun broadcastSchedulePlay(
+        startPositionMs: Long,
+        executionDelayMs: Long = 500L,
+        deviceOrientation: DeviceOrientation = this.deviceOrientation,
+        bezelPercent: Float = this.bezelPercent
+    ): Long {
         val targetSystemTimeMs = SystemClock.elapsedRealtime() + executionDelayMs
         val message = SyncMessage.SchedulePlay(
             startPositionMs = startPositionMs,
             targetSystemTimeMs = targetSystemTimeMs,
-            hostExecutionEpochMs = targetSystemTimeMs
+            hostExecutionEpochMs = targetSystemTimeMs,
+            deviceOrientation = deviceOrientation,
+            bezelPercent = bezelPercent
         )
         connectedClients.forEach { client ->
             client.sendMessage(message)

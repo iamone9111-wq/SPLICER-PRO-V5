@@ -113,6 +113,7 @@ class HostActivity : AppCompatActivity() {
     private var gridCols: Int = 1
     private var scaleMode: ScaleMode = ScaleMode.CONTAIN
     private var deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
+    private var bezelPercent: Float = 3.5f
 
     private val videoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -356,6 +357,31 @@ class HostActivity : AppCompatActivity() {
             broadcastConfiguration()
         }
 
+        // Mobile Bezel Compensation Toggle (0%, 2%, 3.5%, 6%)
+        binding.btnBezelCompensation.setOnClickListener {
+            bezelPercent = when (bezelPercent) {
+                3.5f -> 6.0f
+                6.0f -> 0.0f
+                0.0f -> 2.0f
+                2.0f -> 3.5f
+                else -> 3.5f
+            }
+            binding.tvBezelCompensation.text = when (bezelPercent) {
+                0.0f -> "🚫 Bezel Compensation: OFF (0%)"
+                2.0f -> "📱 Ultra-Slim Bezels (2.0%)"
+                3.5f -> "✨ Seamless Mobile Bezels (3.5%)"
+                6.0f -> "📐 Wide Phone Bezels (6.0%)"
+                else -> "✨ Bezel: ${bezelPercent}%"
+            }
+            updateMatrix()
+            broadcastConfiguration()
+            val label = when (bezelPercent) {
+                0.0f -> "Bezels off"
+                else -> "Bezel compensation set to ${bezelPercent}%"
+            }
+            Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
+        }
+
         // Floating immersion controls
         binding.btnFloatingPause.setOnClickListener {
             val isPlaying = syncController?.isPlaying() == true
@@ -366,7 +392,7 @@ class HostActivity : AppCompatActivity() {
             } else {
                 val execTime = SystemClock.elapsedRealtime() + 300L
                 syncController?.schedulePlay(syncController?.currentPositionMs ?: 0L, execTime)
-                server?.broadcastPlay(syncController?.currentPositionMs ?: 0L, execTime, deviceOrientation)
+                server?.broadcastPlay(syncController?.currentPositionMs ?: 0L, execTime, deviceOrientation, bezelPercent)
                 binding.btnFloatingPause.text = "⏸ Pause"
             }
         }
@@ -385,10 +411,11 @@ class HostActivity : AppCompatActivity() {
             return
         }
 
+        // Lock strictly to the configured device placement so all screens match perfectly
         if (deviceOrientation == DeviceOrientation.VERTICAL) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
 
         binding.hostSettingsScrollView.visibility = View.GONE
@@ -397,7 +424,7 @@ class HostActivity : AppCompatActivity() {
 
         val executionEpoch = SystemClock.elapsedRealtime() + 400L
         syncController?.schedulePlay(0L, executionEpoch)
-        server?.broadcastPlay(0L, executionEpoch, deviceOrientation)
+        server?.broadcastPlay(0L, executionEpoch, deviceOrientation, bezelPercent)
         binding.hostTextureView.post {
             updateMatrix()
         }
@@ -464,6 +491,7 @@ class HostActivity : AppCompatActivity() {
                 videoHeight = videoHeight,
                 viewWidth = viewW,
                 viewHeight = viewH,
+                bezelPercent = bezelPercent,
                 rotationDeg = 0
             )
         }
@@ -479,8 +507,16 @@ class HostActivity : AppCompatActivity() {
             mediaUri = httpStreamUrl,
             videoWidth = videoWidth,
             videoHeight = videoHeight,
-            deviceOrientation = deviceOrientation
+            deviceOrientation = deviceOrientation,
+            bezelPercent = bezelPercent
         )
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        binding.hostTextureView.post {
+            updateMatrix()
+        }
     }
 
     private fun getLocalIpAddress(): String {
@@ -599,15 +635,18 @@ class ClientActivity : AppCompatActivity() {
                 }
                 val screenNum = role.deviceIndex + 1
                 runOnUiThread {
-                    if (role.deviceOrientation == DeviceOrientation.VERTICAL) {
-                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    // Lock strictly to the placement orientation so screens cannot desync or drift
+                    requestedOrientation = if (role.deviceOrientation == DeviceOrientation.VERTICAL) {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     } else {
-                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                     }
                     val orientText = if (role.deviceOrientation == DeviceOrientation.VERTICAL) "Vertical (Portrait)" else "Horizontal (Landscape)"
                     binding.tvScreenIndex.text = "Screen #$screenNum of ${role.totalDevices} (Row ${role.row + 1}, Col ${role.col + 1}) • $orientText"
                     binding.tvIdentifyBigNumber.text = "$screenNum"
-                    applyMatrix(role)
+                    binding.clientTextureView.post {
+                        applyMatrix(role)
+                    }
                     Toast.makeText(this@ClientActivity, "📱 Screen #$screenNum • Placed $orientText", Toast.LENGTH_SHORT).show()
                 }
             },
@@ -617,12 +656,14 @@ class ClientActivity : AppCompatActivity() {
                     syncController?.prepareMedia(Uri.parse(media.mediaUri))
                 }
             },
-            onPlayScheduled = { startPositionMs, localExecutionTimeMs ->
+            onPlayScheduled = { startPositionMs, localExecutionTimeMs, orientation, _ ->
                 runOnUiThread {
-                    if (currentDeviceOrientation == DeviceOrientation.VERTICAL) {
-                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    currentDeviceOrientation = orientation
+                    // Enforce orientation synchronization across all screens
+                    requestedOrientation = if (orientation == DeviceOrientation.VERTICAL) {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     } else {
-                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                     }
                     syncController?.schedulePlay(startPositionMs, localExecutionTimeMs)
                     binding.layoutClientStatus.visibility = View.GONE
@@ -674,8 +715,16 @@ class ClientActivity : AppCompatActivity() {
                 videoHeight = vH,
                 viewWidth = viewW,
                 viewHeight = viewH,
+                bezelPercent = role.bezelPercent,
                 rotationDeg = role.rotationDeg
             )
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        binding.clientTextureView.post {
+            currentRole?.let { applyMatrix(it) }
         }
     }
 

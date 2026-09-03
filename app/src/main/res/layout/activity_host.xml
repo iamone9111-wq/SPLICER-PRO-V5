@@ -489,6 +489,52 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- Row 5: Mobile Bezel Compensation (Seamless Continuity) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#080D1E"
+                android:padding="10dp"
+                android:layout_marginBottom="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="BEZEL COMPENSATION (SEAMLESS WALL)"
+                    android:textColor="#64748B"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <Button
+                        android:id="@+id/btnBezelCompensation"
+                        android:layout_width="0dp"
+                        android:layout_height="38dp"
+                        android:layout_weight="1"
+                        android:text="Adjust Bezel"
+                        android:textSize="11sp"
+                        android:backgroundTint="#1E293B"
+                        android:textColor="#CBD5E1" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvBezelCompensation"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="✨ Seamless Mobile Bezels (3.5%)"
+                    android:textColor="#A78BFA"
+                    android:textSize="11sp"
+                    android:gravity="center"
+                    android:layout_marginTop="4dp" />
+            </LinearLayout>
+
         </LinearLayout>
     </ScrollView>
 
