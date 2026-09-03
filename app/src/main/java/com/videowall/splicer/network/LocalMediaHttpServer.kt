@@ -197,16 +197,41 @@ class LocalMediaHttpServer(
     ) {
         var remoteConn: HttpURLConnection? = null
         try {
-            remoteConn = (URL(remoteUrl).openConnection() as HttpURLConnection).apply {
-                requestMethod = method
-                connectTimeout = 10000
-                readTimeout = 15000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:124.0)")
-                if (!rangeHeader.isNullOrEmpty()) {
-                    setRequestProperty("Range", rangeHeader)
+            var currentUrl = remoteUrl
+            var redirectCount = 0
+
+            while (redirectCount < 6) {
+                val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = method
+                    connectTimeout = 10000
+                    readTimeout = 15000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:124.0)")
+                    if (!rangeHeader.isNullOrEmpty()) {
+                        setRequestProperty("Range", rangeHeader)
+                    }
                 }
+
+                val responseCode = conn.responseCode
+                if (responseCode == 301 || responseCode == 302 || responseCode == 303 || responseCode == 307 || responseCode == 308) {
+                    val location = conn.getHeaderField("Location")
+                    conn.disconnect()
+                    if (!location.isNullOrEmpty()) {
+                        currentUrl = if (location.startsWith("http://", ignoreCase = true) || location.startsWith("https://", ignoreCase = true)) {
+                            location
+                        } else {
+                            URL(URL(currentUrl), location).toString()
+                        }
+                        redirectCount++
+                        continue
+                    }
+                }
+
+                remoteConn = conn
+                break
             }
+
+            if (remoteConn == null) return
 
             val responseCode = remoteConn.responseCode
             val statusLine = "HTTP/1.1 $responseCode ${remoteConn.responseMessage ?: "OK"}\r\n"

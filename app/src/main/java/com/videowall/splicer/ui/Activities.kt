@@ -635,10 +635,15 @@ class HostActivity : AppCompatActivity() {
     private fun loadRemoteVideo(url: String) {
         binding.btnLoadYoutube.isEnabled = false
         binding.btnLoadYoutube.text = "⏳ Resolving Video Stream..."
-        binding.tvSelectedVideo.text = "🔍 Resolving YouTube stream / video link..."
+        binding.tvSelectedVideo.text = "🔍 Contacting stream server..."
+        activeVideoSource = "youtube"
 
         lifecycleScope.launch(Dispatchers.Main) {
-            val result = YouTubeStreamResolver.resolveStream(url)
+            val result = YouTubeStreamResolver.resolveStream(url) { statusMsg ->
+                lifecycleScope.launch(Dispatchers.Main) {
+                    binding.tvSelectedVideo.text = "⏳ $statusMsg"
+                }
+            }
             result.onSuccess { resolved ->
                 val streamUri = Uri.parse(resolved.streamUrl)
                 selectedVideoUri = streamUri
