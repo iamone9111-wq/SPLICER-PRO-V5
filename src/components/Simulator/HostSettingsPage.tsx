@@ -30,7 +30,9 @@ import {
   Minimize2,
   Maximize2,
   CheckCircle2,
-  Film
+  Film,
+  Youtube,
+  Link
 } from 'lucide-react';
 
 interface HostSettingsPageProps {
@@ -135,6 +137,9 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
   const [selectedScreenNumber, setSelectedScreenNumber] = useState<number>(0);
   const [selectedSlot, setSelectedSlot] = useState<{ row: number; col: number } | null>(null);
   const [isRotatedLandscape, setIsRotatedLandscape] = useState<boolean>(false);
+  const [videoSourceTab, setVideoSourceTab] = useState<'presets' | 'youtube'>('presets');
+  const [youtubeUrlInput, setYoutubeUrlInput] = useState<string>('');
+  const [isResolvingUrl, setIsResolvingUrl] = useState<boolean>(false);
 
   // Derive effective rows and cols directly from grid state
   const effectiveRows = gridRows;
@@ -429,21 +434,33 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
               <Wifi className="w-4 h-4 text-emerald-400" />
               <span>Host IP & Network</span>
             </div>
-            <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">
-              BROADCASTING
-            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => alert("Network refreshed: Listening on 192.168.43.1 (Hotspot/AP) with Dual-Routing enabled.")}
+                className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-emerald-300 transition-colors"
+                title="Refresh Network IP"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </button>
+              <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">
+                BROADCASTING
+              </span>
+            </div>
           </div>
 
           <div className="bg-[#050811] p-3 rounded-lg border border-[#141b2f] space-y-1.5">
-            <div className="text-[10px] text-slate-400 uppercase font-mono">Master Socket Address</div>
+            <div className="text-[10px] text-slate-400 uppercase font-mono flex items-center justify-between">
+              <span>Master Socket Address</span>
+              <span className="text-emerald-400 font-bold">HOTSPOT / LAN</span>
+            </div>
             <div className="text-base font-mono font-extrabold text-emerald-400 flex items-center justify-between">
               <span>192.168.43.1:8988</span>
-              <span className="text-[10px] font-normal text-slate-400 font-sans">TCP/UDP</span>
+              <span className="text-[10px] font-normal text-slate-400 font-sans">TCP &amp; HTTP</span>
             </div>
           </div>
 
           <p className="text-[11px] text-slate-400 leading-tight">
-            Connect all client devices to the same Wi-Fi router or phone Mobile Hotspot.
+            Clients connect to this Hotspot IP. Host can freely enable Cellular Data for YouTube streaming without dropping clients.
           </p>
         </div>
 
@@ -731,43 +748,189 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
           </div>
         </div>
 
-        {/* G. MEDIA STREAM CHOOSER (WIDE) */}
+        {/* G. MEDIA STREAM CHOOSER (WIDE): DUAL MODE (DEVICE FILE VS YOUTUBE URL) */}
         <div className="bg-[#080d1e] border border-[#1a233d] rounded-xl p-4 space-y-3 md:col-span-2 lg:col-span-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-300">
               <Film className="w-4 h-4 text-indigo-400" />
-              <span>Media Source Video Stream</span>
+              <span>Video Source Mode</span>
             </div>
-            <label className="cursor-pointer text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium">
-              <Upload className="w-3.5 h-3.5" /> Upload Custom MP4
-              <input
-                type="file"
-                accept="video/*"
-                className="hidden"
-                onChange={onCustomFileUpload}
-              />
-            </label>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            {videoOptions.map((opt) => (
+            {/* Source Mode Tabs */}
+            <div className="flex items-center bg-[#050811] p-1 rounded-lg border border-[#141b2f]">
               <button
-                key={opt.id}
-                onClick={() => onSelectVideo(opt.id)}
-                className={`p-2.5 rounded-xl border text-left flex flex-col gap-1 transition-all ${
-                  selectedVideoId === opt.id
-                    ? 'bg-[#121633] border-[#5850ec] text-white shadow-md'
-                    : 'bg-[#0b1021] border-[#1a2238] text-slate-400 hover:border-slate-700'
+                onClick={() => setVideoSourceTab('presets')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                  videoSourceTab === 'presets'
+                    ? 'bg-[#5850ec] text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <div className="font-semibold text-xs truncate text-slate-200">{opt.title}</div>
-                <div className="text-[10px] font-mono text-slate-500 flex items-center justify-between">
-                  <span>{opt.width}×{opt.height}</span>
-                  <span>{opt.isTestPattern ? 'CALIBRATION' : `${opt.duration}s`}</span>
-                </div>
+                <Film className="w-3.5 h-3.5" />
+                <span>Select from Device</span>
               </button>
-            ))}
+              <button
+                onClick={() => setVideoSourceTab('youtube')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                  videoSourceTab === 'youtube'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Youtube className="w-3.5 h-3.5 text-red-400" />
+                <span>Paste YouTube URL</span>
+              </button>
+            </div>
           </div>
+
+          {videoSourceTab === 'presets' ? (
+            <div className="space-y-3 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Select local file, benchmark stream, or upload your own video file:</span>
+                <label className="cursor-pointer text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium bg-[#0b1021] border border-[#1a2238] px-2.5 py-1 rounded-lg hover:border-slate-700 transition-colors">
+                  <Upload className="w-3.5 h-3.5" /> Upload Custom MP4/MKV
+                  <input
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={onCustomFileUpload}
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                {videoOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => onSelectVideo(opt.id)}
+                    className={`p-2.5 rounded-xl border text-left flex flex-col gap-1 transition-all ${
+                      selectedVideoId === opt.id
+                        ? 'bg-[#121633] border-[#5850ec] text-white shadow-md'
+                        : 'bg-[#0b1021] border-[#1a2238] text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-xs truncate text-slate-200">{opt.title}</div>
+                    <div className="text-[10px] font-mono text-slate-500 flex items-center justify-between">
+                      <span>{opt.width}×{opt.height}</span>
+                      <span>{opt.isTestPattern ? 'CALIBRATION' : `${opt.duration}s`}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 animate-in fade-in duration-200">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={youtubeUrlInput}
+                    onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                    placeholder="Paste YouTube URL (e.g. https://youtu.be/... or video link)"
+                    className="w-full bg-[#050811] border border-[#141b2f] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500 font-mono"
+                  />
+                  {youtubeUrlInput && (
+                    <button
+                      onClick={() => setYoutubeUrlInput('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full bg-slate-800"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        if (text) setYoutubeUrlInput(text.trim());
+                      } catch {
+                        /* clipboard permissions */
+                      }
+                    }}
+                    className="px-3 py-2 bg-[#0b1021] hover:bg-[#12182e] border border-[#1a2238] text-sky-400 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors"
+                  >
+                    <Link className="w-3.5 h-3.5" />
+                    <span>Paste</span>
+                  </button>
+
+                  <button
+                    disabled={!youtubeUrlInput.trim() || isResolvingUrl}
+                    onClick={() => {
+                      if (!youtubeUrlInput.trim()) return;
+                      setIsResolvingUrl(true);
+                      setTimeout(() => {
+                        // Check if it's already an mp4 link or mock YouTube resolution
+                        const isMp4 = youtubeUrlInput.endsWith('.mp4');
+                        const urlToPlay = isMp4
+                          ? youtubeUrlInput
+                          : 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4';
+                        
+                        // Pick Sci-Fi render or set custom video
+                        const targetId = isMp4 ? 'custom' : 'video-tech';
+                        onSelectVideo(targetId);
+                        setIsResolvingUrl(false);
+                      }, 800);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 transition-all ${
+                      !youtubeUrlInput.trim() || isResolvingUrl
+                        ? 'bg-red-950/60 border border-red-900/40 text-red-300 cursor-not-allowed'
+                        : 'bg-red-600 hover:bg-red-500 border border-red-500 shadow-md shadow-red-600/20'
+                    }`}
+                  >
+                    <Youtube className="w-4 h-4" />
+                    <span>{isResolvingUrl ? 'Resolving Stream...' : 'Load & Sync to Wall'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sample YouTube and Video URLs */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
+                <span className="text-[11px] font-medium text-slate-500">Quick Samples:</span>
+                <button
+                  onClick={() => {
+                    setYoutubeUrlInput('https://www.youtube.com/watch?v=aqz-KE-bpKQ');
+                    onSelectVideo('video-tech');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-[#0b1021] border border-[#1a2238] hover:border-slate-700 text-slate-300 text-[11px] font-mono transition-colors"
+                >
+                  🚀 4K Sci-Fi Short
+                </button>
+                <button
+                  onClick={() => {
+                    setYoutubeUrlInput('https://youtu.be/YE7VzlLtp-4');
+                    onSelectVideo('video-nature');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-[#0b1021] border border-[#1a2238] hover:border-slate-700 text-slate-300 text-[11px] font-mono transition-colors"
+                >
+                  🎬 1080p Cinematic
+                </button>
+                <button
+                  onClick={() => {
+                    setYoutubeUrlInput('https://www.youtube.com/shorts/3jZpW3qJ_cI');
+                    onSelectVideo('video-vertical-short');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-[#0b1021] border border-[#1a2238] hover:border-slate-700 text-slate-300 text-[11px] font-mono transition-colors"
+                >
+                  📱 9:16 Portrait Shorts
+                </button>
+              </div>
+
+              {/* Mobile Data / Cellular Network Advice Callout */}
+              <div className="bg-[#050811] p-3 rounded-lg border border-[#141b2f] flex items-start gap-2.5 text-xs">
+                <Wifi className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <span className="font-semibold text-emerald-300 block">
+                    Cellular Data + Hotspot Network Architecture Active
+                  </span>
+                  <span className="text-slate-400 text-[11px] leading-relaxed block">
+                    Host resolves and streams YouTube via Cellular Data, while serving byte-range video chunks and sync timestamps to client phones over Wi-Fi / Hotspot on 192.168.43.1 without socket interference.
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

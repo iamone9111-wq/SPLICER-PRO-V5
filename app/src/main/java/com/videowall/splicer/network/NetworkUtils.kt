@@ -22,12 +22,15 @@ object NetworkUtils {
     // Disallowed / non-routable interface prefixes (Cellular data, loopback, virtual containers)
     private val CELLULAR_AND_VIRTUAL_PREFIXES = listOf(
         "rmnet", "ccmni", "pdp", "wwan", "clat", "dummy", "radio", 
-        "v4-rmnet", "lo", "tun", "tap", "ppp", "docker", "vbox"
+        "v4-rmnet", "seth", "cellular", "mobile", "data", "epdg", "rev_rmnet",
+        "lo", "tun", "tap", "ppp", "docker", "vbox"
     )
 
     /**
      * Binds the application process to the active Wi-Fi or Hotspot network interface.
-     * Prevents Android from routing LAN traffic over Mobile Data (which causes ENETUNREACH).
+     * Use on CLIENT devices to ensure their socket connection targets the local Hotspot/Wi-Fi,
+     * even if the client has mobile data enabled.
+     * Do NOT call this on the HOST when host needs cellular internet to fetch YouTube videos.
      */
     fun bindProcessToWifi(context: Context?) {
         if (context == null) return
@@ -44,6 +47,22 @@ object NetworkUtils {
             }
         } catch (e: Exception) {
             Log.w(TAG, "bindProcessToWifi failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Clears any active process-wide network binding so the default Android routing rules apply.
+     * Crucial on the HOST device so cellular internet traffic (for YouTube streaming) flows freely
+     * while local sockets bind to 0.0.0.0 for LAN clients.
+     */
+    fun clearProcessNetworkBinding(context: Context?) {
+        if (context == null) return
+        try {
+            val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            cm?.bindProcessToNetwork(null)
+            Log.d(TAG, "Cleared process network binding (default multi-network routing enabled)")
+        } catch (e: Exception) {
+            Log.w(TAG, "clearProcessNetworkBinding failed: ${e.message}")
         }
     }
 
@@ -121,13 +140,14 @@ object NetworkUtils {
     fun getLocalIpAddress(context: Context? = null): String {
         val validIps = getValidLocalIpv4Addresses()
         if (validIps.isNotEmpty()) {
-            // Prioritize standard Wi-Fi (wlan0) or Hotspot interfaces (ap0, softap, swlan)
-            val primaryIp = validIps.firstOrNull { it.interfaceName.startsWith("wlan", ignoreCase = true) }
-                ?: validIps.firstOrNull { it.interfaceName.startsWith("ap", ignoreCase = true) || it.interfaceName.contains("softap", ignoreCase = true) }
+            // Prioritize Android Mobile Hotspot (192.168.43.1) or AP interface first so clients can connect immediately
+            val hotspotIp = validIps.firstOrNull { it.ip == "192.168.43.1" }
+                ?: validIps.firstOrNull { it.interfaceName.startsWith("ap", ignoreCase = true) || it.interfaceName.contains("softap", ignoreCase = true) || it.interfaceName.contains("swlan", ignoreCase = true) }
+                ?: validIps.firstOrNull { it.interfaceName.startsWith("wlan", ignoreCase = true) }
                 ?: validIps.firstOrNull { it.interfaceName.startsWith("rndis", ignoreCase = true) || it.interfaceName.startsWith("eth", ignoreCase = true) }
                 ?: validIps.first()
-            Log.d(TAG, "Selected primary LAN IP: ${primaryIp.ip} on interface ${primaryIp.interfaceName}")
-            return primaryIp.ip
+            Log.d(TAG, "Selected primary LAN IP: ${hotspotIp.ip} on interface ${hotspotIp.interfaceName}")
+            return hotspotIp.ip
         }
 
         // Fallback to legacy WifiManager if available and valid
@@ -211,7 +231,20 @@ object NetworkUtils {
         if (ip.isEmpty() || ip == "0.0.0.0" || ip == "127.0.0.1" || ip.contains(":")) {
             return false
         }
-        // Exclude carrier CGNAT ranges like 100.64.0.0/10 if bound to non-wlan
+        // Exclude loopback and link-local (169.254.x.x)
+        if (ip.startsWith("127.") || ip.startsWith("169.254.")) {
+            return false
+        }
+        // Exclude carrier CGNAT ranges (100.64.0.0/10: 100.64.x.x - 100.127.x.x) commonly used by mobile data
+        if (ip.startsWith("100.")) {
+            val parts = ip.split(".")
+            if (parts.size >= 2) {
+                val secondOctet = parts[1].toIntOrNull() ?: 0
+                if (secondOctet in 64..127) {
+                    return false
+                }
+            }
+        }
         return true
     }
 }

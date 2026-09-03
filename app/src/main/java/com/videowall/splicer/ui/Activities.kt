@@ -1,9 +1,14 @@
 package com.videowall.splicer.ui
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.media.MediaMetadataRetriever
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -20,7 +25,9 @@ import com.videowall.splicer.databinding.ActivityMainBinding
 import com.videowall.splicer.network.*
 import com.videowall.splicer.playback.SyncPlaybackController
 import com.videowall.splicer.transform.MatrixTransformHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 // ==========================================
 // 1. HOME SCREEN / ROLE SELECTION
@@ -114,6 +121,7 @@ class HostActivity : AppCompatActivity() {
     private var scaleMode: ScaleMode = ScaleMode.CONTAIN
     private var deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
     private var bezelPercent: Float = 3.5f
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val videoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -121,7 +129,7 @@ class HostActivity : AppCompatActivity() {
             mediaServer?.setMediaUri(it)
             extractAndApplyVideoMetadata(it)
             syncController?.prepareMedia(it)
-            Toast.makeText(this, "🎬 Video loaded & ready to stream to all screens", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "🎬 Local video loaded & ready to stream", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -170,13 +178,38 @@ class HostActivity : AppCompatActivity() {
         setContentView(binding.root)
         hideSystemUI()
 
-        NetworkUtils.bindProcessToWifi(this)
+        // Unbind process network restrictions so the Host can freely use Cellular Data / Internet
+        // for resolving and streaming YouTube videos, while ServerSockets bind to 0.0.0.0 for LAN clients.
+        NetworkUtils.clearProcessNetworkBinding(this)
 
         val hostIp = getLocalIpAddress()
         binding.tvHostIp.text = "$hostIp:8988"
+        binding.tvHostNetworkStatus.text = if (hostIp == "192.168.43.1") {
+            "Mobile Hotspot Active • Clients connect here"
+        } else {
+            "Local Wi-Fi Active • Port 8988"
+        }
         binding.tvConnectedScreensCount.text = "1 Screen Active (Host only)"
         binding.tvAppearance.text = "🎯 REAL RATIO (Fit)"
         updateLayoutUI()
+
+        // Register dynamic network change listener so if the host turns on Mobile Data or Hotspot,
+        // the Host IP and beacon update smoothly with zero disconnection.
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        try {
+            val request = NetworkRequest.Builder().build()
+            networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    runOnUiThread { refreshHostNetwork(false) }
+                }
+                override fun onLost(network: Network) {
+                    runOnUiThread { refreshHostNetwork(false) }
+                }
+            }
+            cm?.registerNetworkCallback(request, networkCallback!!)
+        } catch (e: Exception) {
+            Log.w("HostActivity", "Network callback registration error: ${e.message}")
+        }
 
         // Start UDP Discovery Beacon so Client phones discover Host automatically
         beaconJob = DiscoveryService.startBroadcasting(lifecycleScope, hostIp, 8988, this)
@@ -246,8 +279,82 @@ class HostActivity : AppCompatActivity() {
             finish()
         }
 
+        // Network IP manual refresh
+        binding.btnRefreshHostIp.setOnClickListener {
+            refreshHostNetwork(true)
+        }
+
+        // Video Source Tab Switching
+        binding.btnTabDeviceVideo.setOnClickListener {
+            activeVideoSource = "file"
+            binding.layoutDeviceVideoSection.visibility = View.VISIBLE
+            binding.layoutYoutubeSection.visibility = View.GONE
+            binding.btnTabDeviceVideo.setBackgroundColor(Color.parseColor("#4F46E5"))
+            binding.btnTabDeviceVideo.setTextColor(Color.WHITE)
+            binding.btnTabYoutube.setBackgroundColor(Color.parseColor("#1E293B"))
+            binding.btnTabYoutube.setTextColor(Color.parseColor("#94A3B8"))
+        }
+
+        binding.btnTabYoutube.setOnClickListener {
+            activeVideoSource = "youtube"
+            binding.layoutDeviceVideoSection.visibility = View.GONE
+            binding.layoutYoutubeSection.visibility = View.VISIBLE
+            binding.btnTabYoutube.setBackgroundColor(Color.parseColor("#DC2626"))
+            binding.btnTabYoutube.setTextColor(Color.WHITE)
+            binding.btnTabDeviceVideo.setBackgroundColor(Color.parseColor("#1E293B"))
+            binding.btnTabDeviceVideo.setTextColor(Color.parseColor("#94A3B8"))
+        }
+
+        // Local Device Video Picker
         binding.btnSelectVideo.setOnClickListener {
             videoPickerLauncher.launch("video/*")
+        }
+
+        // YouTube URL Action Handlers
+        binding.btnPasteYoutube.setOnClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            val clipData = clipboard?.primaryClip
+            if (clipData != null && clipData.itemCount > 0) {
+                val pasted = clipData.getItemAt(0).text?.toString()?.trim() ?: ""
+                if (pasted.isNotEmpty()) {
+                    binding.etYoutubeUrl.setText(pasted)
+                    Toast.makeText(this, "Pasted URL from clipboard", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        binding.btnClearYoutube.setOnClickListener {
+            binding.etYoutubeUrl.setText("")
+        }
+
+        binding.btnLoadYoutube.setOnClickListener {
+            val url = binding.etYoutubeUrl.text.toString().trim()
+            if (url.isEmpty()) {
+                Toast.makeText(this, "Please enter or paste a YouTube URL", Toast.LENGTH_SHORT).show()
+            } else {
+                loadRemoteVideo(url)
+            }
+        }
+
+        // Preset Sample Buttons
+        binding.btnPresetSample1.setOnClickListener {
+            val url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+            binding.etYoutubeUrl.setText(url)
+            loadRemoteVideo(url)
+        }
+
+        binding.btnPresetSample2.setOnClickListener {
+            val url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
+            binding.etYoutubeUrl.setText(url)
+            loadRemoteVideo(url)
+        }
+
+        binding.btnPresetSample3.setOnClickListener {
+            val url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
+            binding.etYoutubeUrl.setText(url)
+            loadRemoteVideo(url)
         }
 
         binding.btnPlayImmersion.setOnClickListener {
@@ -519,6 +626,64 @@ class HostActivity : AppCompatActivity() {
         }
     }
 
+    private fun loadRemoteVideo(url: String) {
+        binding.btnLoadYoutube.isEnabled = false
+        binding.btnLoadYoutube.text = "⏳ Resolving Video Stream..."
+        binding.tvSelectedVideo.text = "🔍 Resolving YouTube stream / video link..."
+
+        lifecycleScope.launch(Dispatchers.Main) {
+            val result = YouTubeStreamResolver.resolveStream(url)
+            result.onSuccess { resolved ->
+                val streamUri = Uri.parse(resolved.streamUrl)
+                selectedVideoUri = streamUri
+                videoWidth = resolved.width
+                videoHeight = resolved.height
+
+                mediaServer?.setMediaUri(streamUri)
+                syncController?.prepareMedia(streamUri)
+
+                val ratioText = when {
+                    videoWidth == videoHeight -> "1:1 Square"
+                    videoWidth * 9 == videoHeight * 16 -> "16:9 Landscape"
+                    videoWidth * 16 == videoHeight * 9 -> "9:16 Portrait"
+                    videoWidth * 3 == videoHeight * 4 -> "4:3 Standard"
+                    videoWidth * 4 == videoHeight * 3 -> "3:4 Portrait"
+                    videoWidth > videoHeight -> String.format("%.2f:1 Landscape", videoWidth.toFloat() / videoHeight)
+                    else -> String.format("1:%.2f Portrait", videoHeight.toFloat() / videoWidth)
+                }
+
+                binding.tvSelectedVideo.text = "🎬 ${resolved.title} • ${resolved.width}×${resolved.height} ($ratioText) • Stream Ready"
+                updateMatrix()
+                broadcastConfiguration()
+                Toast.makeText(this@HostActivity, "✅ Video stream ready: ${resolved.title}", Toast.LENGTH_SHORT).show()
+            }.onFailure { err ->
+                Log.e("HostActivity", "Failed to resolve stream: ${err.message}", err)
+                binding.tvSelectedVideo.text = "⚠️ Failed: ${err.message}"
+                Toast.makeText(this@HostActivity, "Error: ${err.message}", Toast.LENGTH_LONG).show()
+            }
+            binding.btnLoadYoutube.isEnabled = true
+            binding.btnLoadYoutube.text = "⚡ Load & Sync YouTube to All Screens"
+        }
+    }
+
+    private fun refreshHostNetwork(showToast: Boolean) {
+        val hostIp = getLocalIpAddress()
+        binding.tvHostIp.text = "$hostIp:8988"
+        binding.tvHostNetworkStatus.text = if (hostIp == "192.168.43.1") {
+            "Mobile Hotspot Active • Clients connect here"
+        } else {
+            "Local Wi-Fi Active • Port 8988"
+        }
+
+        beaconJob?.cancel()
+        beaconJob = DiscoveryService.startBroadcasting(lifecycleScope, hostIp, 8988, this)
+        broadcastConfiguration()
+
+        if (showToast) {
+            Toast.makeText(this, "📶 Network refreshed: $hostIp", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun getLocalIpAddress(): String {
         return NetworkUtils.getLocalIpAddress(this)
     }
@@ -537,6 +702,12 @@ class HostActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            networkCallback?.let { cm?.unregisterNetworkCallback(it) }
+        } catch (e: Exception) {
+            // Ignore
+        }
         beaconJob?.cancel()
         syncController?.release()
         server?.stop()

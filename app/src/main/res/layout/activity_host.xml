@@ -127,7 +127,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Video Selector Card -->
+            <!-- Video Selector Card with Device File and YouTube URL options -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -136,32 +136,192 @@
                 android:padding="12dp"
                 android:layout_marginBottom="12dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="VIDEO SOURCE"
-                    android:textColor="#64748B"
-                    android:textSize="10sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="6dp" />
-
-                <Button
-                    android:id="@+id/btnSelectVideo"
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:text="🎬 Select Video File from Device (MP4/MKV)"
-                    android:backgroundTint="#4F46E5"
-                    android:textColor="#FFFFFF" />
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="VIDEO SOURCE"
+                        android:textColor="#64748B"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <!-- Tab Switcher -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnTabDeviceVideo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:text="📁 Device File"
+                            android:textSize="10sp"
+                            android:textStyle="bold"
+                            android:backgroundTint="#4F46E5"
+                            android:textColor="#FFFFFF"
+                            android:paddingHorizontal="10dp" />
+
+                        <Button
+                            android:id="@+id/btnTabYoutube"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:text="🔴 YouTube URL"
+                            android:textSize="10sp"
+                            android:textStyle="bold"
+                            android:backgroundTint="#1E293B"
+                            android:textColor="#94A3B8"
+                            android:paddingHorizontal="10dp"
+                            android:layout_marginStart="6dp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- SECTION 1: Local Device File Selection -->
+                <LinearLayout
+                    android:id="@+id/layoutDeviceVideoSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <Button
+                        android:id="@+id/btnSelectVideo"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:text="🎬 Select Video File from Device (MP4/MKV)"
+                        android:backgroundTint="#4F46E5"
+                        android:textColor="#FFFFFF" />
+                </LinearLayout>
+
+                <!-- SECTION 2: YouTube / Online Video URL Input -->
+                <LinearLayout
+                    android:id="@+id/layoutYoutubeSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="6dp">
+
+                        <EditText
+                            android:id="@+id/etYoutubeUrl"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:hint="Paste YouTube or video link (https://...)"
+                            android:textColorHint="#475569"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:background="#0F172A"
+                            android:paddingHorizontal="10dp"
+                            android:singleLine="true"
+                            android:imeOptions="actionDone" />
+
+                        <Button
+                            android:id="@+id/btnPasteYoutube"
+                            android:layout_width="wrap_content"
+                            android:layout_height="44dp"
+                            android:text="📋 Paste"
+                            android:textSize="11sp"
+                            android:backgroundTint="#1E293B"
+                            android:textColor="#38BDF8"
+                            android:layout_marginStart="4dp"
+                            android:paddingHorizontal="8dp" />
+
+                        <Button
+                            android:id="@+id/btnClearYoutube"
+                            android:layout_width="38dp"
+                            android:layout_height="44dp"
+                            android:text="✕"
+                            android:textSize="12sp"
+                            android:backgroundTint="#1E293B"
+                            android:textColor="#94A3B8"
+                            android:layout_marginStart="4dp" />
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnLoadYoutube"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:text="⚡ Load &amp; Sync YouTube to All Screens"
+                        android:backgroundTint="#DC2626"
+                        android:textColor="#FFFFFF"
+                        android:textStyle="bold"
+                        android:textSize="12sp" />
+
+                    <!-- Preset Quick Test Chips -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="6dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Samples:"
+                            android:textColor="#64748B"
+                            android:textSize="10sp"
+                            android:layout_marginEnd="6dp" />
+
+                        <Button
+                            android:id="@+id/btnPresetSample1"
+                            android:layout_width="0dp"
+                            android:layout_height="28dp"
+                            android:layout_weight="1"
+                            android:text="1080p Demo"
+                            android:textSize="9sp"
+                            android:backgroundTint="#1E293B"
+                            android:textColor="#CBD5E1"
+                            android:padding="0dp"
+                            android:layout_marginEnd="3dp" />
+
+                        <Button
+                            android:id="@+id/btnPresetSample2"
+                            android:layout_width="0dp"
+                            android:layout_height="28dp"
+                            android:layout_weight="1"
+                            android:text="4K Sci-Fi"
+                            android:textSize="9sp"
+                            android:backgroundTint="#1E293B"
+                            android:textColor="#CBD5E1"
+                            android:padding="0dp"
+                            android:layout_marginEnd="3dp" />
+
+                        <Button
+                            android:id="@+id/btnPresetSample3"
+                            android:layout_width="0dp"
+                            android:layout_height="28dp"
+                            android:layout_weight="1"
+                            android:text="Cyberpunk"
+                            android:textSize="9sp"
+                            android:backgroundTint="#1E293B"
+                            android:textColor="#CBD5E1"
+                            android:padding="0dp" />
+                    </LinearLayout>
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvSelectedVideo"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="No video selected (Select a video to stream to all screens)"
+                    android:text="No video selected (Select a file or paste YouTube URL)"
                     android:textColor="#94A3B8"
                     android:textSize="11sp"
                     android:gravity="center"
-                    android:layout_marginTop="6dp" />
+                    android:layout_marginTop="8dp" />
             </LinearLayout>
 
             <!-- Row 1: Host IP + Connected Screens -->
@@ -181,13 +341,31 @@
                     android:padding="10dp"
                     android:layout_marginEnd="6dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="HOST IP (SOCKET)"
-                        android:textColor="#64748B"
-                        android:textSize="10sp"
-                        android:textStyle="bold" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="HOST IP (HOTSPOT / LAN)"
+                            android:textColor="#64748B"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+
+                        <Button
+                            android:id="@+id/btnRefreshHostIp"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:text="⟳"
+                            android:textSize="11sp"
+                            android:backgroundTint="#1E293B"
+                            android:textColor="#38BDF8"
+                            android:padding="0dp" />
+                    </LinearLayout>
 
                     <TextView
                         android:id="@+id/tvHostIp"
@@ -197,6 +375,14 @@
                         android:textColor="#34D399"
                         android:textSize="13sp"
                         android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvHostNetworkStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Clients connect to this IP • Hotspot Active"
+                        android:textColor="#64748B"
+                        android:textSize="9sp" />
                 </LinearLayout>
 
                 <!-- Connected Devices Box -->
