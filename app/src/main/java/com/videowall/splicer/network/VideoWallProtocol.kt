@@ -113,7 +113,8 @@ sealed class SyncMessage {
         val targetSystemTimeMs: Long = 0L,
         val hostExecutionEpochMs: Long = 0L,
         val deviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL,
-        val bezelPercent: Float = 3.5f
+        val bezelPercent: Float = 3.5f,
+        val scaleMode: ScaleMode = ScaleMode.COVER
     ) : SyncMessage()
 
     /**

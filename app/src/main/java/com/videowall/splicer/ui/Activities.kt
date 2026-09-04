@@ -11,9 +11,12 @@ import android.net.Network
 import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -123,6 +126,35 @@ class HostActivity : AppCompatActivity() {
     private var bezelPercent: Float = 3.5f
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var activeVideoSource: String = "file"
+
+    private val progressHandler = Handler(Looper.getMainLooper())
+    private var isUserSeeking = false
+    private val progressRunnable = object : Runnable {
+        override fun run() {
+            if (!isUserSeeking && syncController?.isPlaying() == true) {
+                val current = syncController?.currentPositionMs ?: 0L
+                val duration = syncController?.durationMs ?: 0L
+                if (duration > 0) {
+                    val progress = ((current.toDouble() / duration.toDouble()) * 1000).toInt()
+                    binding.videoSeekBar.progress = progress
+                    binding.immersionSeekBar.progress = progress
+                    val curStr = formatTime(current)
+                    val durStr = formatTime(duration)
+                    binding.tvCurrentTime.text = curStr
+                    binding.tvTotalDuration.text = durStr
+                    binding.tvImmersionTime.text = "$curStr / $durStr"
+                }
+            }
+            progressHandler.postDelayed(this, 250)
+        }
+    }
+
+    private fun formatTime(ms: Long): String {
+        val totalSec = (ms / 1000).coerceAtLeast(0)
+        val minutes = totalSec / 60
+        val seconds = totalSec % 60
+        return String.format("%02d:%02d", minutes, seconds)
+    }
 
     private val videoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -363,10 +395,80 @@ class HostActivity : AppCompatActivity() {
         }
 
         binding.btnPauseImmersion.setOnClickListener {
-            syncController?.pause()
-            server?.broadcastPause(syncController?.currentPositionMs ?: 0L)
-            Toast.makeText(this, "⏸ Paused all screens", Toast.LENGTH_SHORT).show()
+            togglePlayPause()
         }
+
+        binding.btnMasterPlayPause.setOnClickListener {
+            togglePlayPause()
+        }
+
+        binding.btnFloatingPause.setOnClickListener {
+            togglePlayPause()
+        }
+
+        // YouTube-style SeekBars (Dashboard and Immersion HUD)
+        val seekBarListener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val duration = syncController?.durationMs ?: 0L
+                    val targetMs = ((progress / 1000f) * duration).toLong()
+                    val curStr = formatTime(targetMs)
+                    val durStr = formatTime(duration)
+                    binding.tvCurrentTime.text = curStr
+                    binding.tvImmersionTime.text = "$curStr / $durStr"
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isUserSeeking = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isUserSeeking = false
+                val progress = seekBar?.progress ?: 0
+                val duration = syncController?.durationMs ?: 0L
+                val targetMs = ((progress / 1000f) * duration).toLong()
+
+                val wasPlaying = syncController?.isPlaying() == true
+                syncController?.seekTo(targetMs)
+                server?.broadcastSeek(targetMs)
+
+                if (wasPlaying) {
+                    val execTime = SystemClock.elapsedRealtime() + 150L
+                    syncController?.schedulePlay(targetMs, execTime)
+                    server?.broadcastPlay(targetMs, execTime, deviceOrientation, bezelPercent, scaleMode)
+                }
+            }
+        }
+        binding.videoSeekBar.setOnSeekBarChangeListener(seekBarListener)
+        binding.immersionSeekBar.setOnSeekBarChangeListener(seekBarListener)
+
+        // 10s Rewind / Forward Controls
+        val rewindAction = View.OnClickListener {
+            val target = syncController?.seekRelative(-10000L) ?: 0L
+            server?.broadcastSeek(target)
+            if (syncController?.isPlaying() == true) {
+                val exec = SystemClock.elapsedRealtime() + 150L
+                syncController?.schedulePlay(target, exec)
+                server?.broadcastPlay(target, exec, deviceOrientation, bezelPercent, scaleMode)
+            }
+            Toast.makeText(this, "⏪ Rewind 10s (${formatTime(target)})", Toast.LENGTH_SHORT).show()
+        }
+        binding.btnRewind10.setOnClickListener(rewindAction)
+        binding.btnImmersionRewind10.setOnClickListener(rewindAction)
+
+        val forwardAction = View.OnClickListener {
+            val target = syncController?.seekRelative(10000L) ?: 0L
+            server?.broadcastSeek(target)
+            if (syncController?.isPlaying() == true) {
+                val exec = SystemClock.elapsedRealtime() + 150L
+                syncController?.schedulePlay(target, exec)
+                server?.broadcastPlay(target, exec, deviceOrientation, bezelPercent, scaleMode)
+            }
+            Toast.makeText(this, "⏩ Forward 10s (${formatTime(target)})", Toast.LENGTH_SHORT).show()
+        }
+        binding.btnForward10.setOnClickListener(forwardAction)
+        binding.btnImmersionForward10.setOnClickListener(forwardAction)
 
         // Screen Count controls
         binding.btnDecreaseScreens.setOnClickListener {
@@ -490,26 +592,49 @@ class HostActivity : AppCompatActivity() {
             Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
         }
 
-        // Floating immersion controls
-        binding.btnFloatingPause.setOnClickListener {
-            val isPlaying = syncController?.isPlaying() == true
-            if (isPlaying) {
-                syncController?.pause()
-                server?.broadcastPause(syncController?.currentPositionMs ?: 0L)
-                binding.btnFloatingPause.text = "▶ Play"
-            } else {
-                val execTime = SystemClock.elapsedRealtime() + 300L
-                syncController?.schedulePlay(syncController?.currentPositionMs ?: 0L, execTime)
-                server?.broadcastPlay(syncController?.currentPositionMs ?: 0L, execTime, deviceOrientation, bezelPercent)
-                binding.btnFloatingPause.text = "⏸ Pause"
-            }
-        }
-
         binding.btnExitImmersion.setOnClickListener {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             binding.immersionOverlayControls.visibility = View.GONE
             binding.hostSettingsScrollView.visibility = View.VISIBLE
             hideSystemUI()
+        }
+    }
+
+    private fun togglePlayPause() {
+        val isPlaying = syncController?.isPlaying() == true
+        if (isPlaying) {
+            val pausePos = syncController?.currentPositionMs ?: 0L
+            syncController?.pause()
+            server?.broadcastPause(pausePos)
+            updatePlayPauseButtonStates(false)
+            Toast.makeText(this, "⏸ Paused all screens at ${formatTime(pausePos)}", Toast.LENGTH_SHORT).show()
+        } else {
+            val resumePos = syncController?.currentPositionMs ?: 0L
+            val execTime = SystemClock.elapsedRealtime() + 150L
+            syncController?.schedulePlay(resumePos, execTime)
+            server?.broadcastPlay(resumePos, execTime, deviceOrientation, bezelPercent, scaleMode)
+            updatePlayPauseButtonStates(true)
+            Toast.makeText(this, "▶ Resumed playback at ${formatTime(resumePos)}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updatePlayPauseButtonStates(isPlaying: Boolean) {
+        if (isPlaying) {
+            binding.btnMasterPlayPause.text = "⏸ PAUSE ALL"
+            binding.btnMasterPlayPause.setBackgroundColor(Color.parseColor("#EF4444"))
+            binding.btnFloatingPause.text = "⏸ Pause"
+            binding.btnFloatingPause.setBackgroundColor(Color.parseColor("#EF4444"))
+            binding.btnPauseImmersion.setImageResource(R.drawable.ic_pause)
+            binding.tvSyncStatusTag.text = "● PLAYING SYNC"
+            binding.tvSyncStatusTag.setTextColor(Color.parseColor("#10B981"))
+        } else {
+            binding.btnMasterPlayPause.text = "▶ PLAY ALL"
+            binding.btnMasterPlayPause.setBackgroundColor(Color.parseColor("#2563EB"))
+            binding.btnFloatingPause.text = "▶ Play"
+            binding.btnFloatingPause.setBackgroundColor(Color.parseColor("#2563EB"))
+            binding.btnPauseImmersion.setImageResource(R.drawable.ic_play_arrow)
+            binding.tvSyncStatusTag.text = "⏸ PAUSED"
+            binding.tvSyncStatusTag.setTextColor(Color.parseColor("#F59E0B"))
         }
     }
 
@@ -535,9 +660,12 @@ class HostActivity : AppCompatActivity() {
         binding.immersionOverlayControls.visibility = View.VISIBLE
         hideSystemUI()
 
-        val executionEpoch = SystemClock.elapsedRealtime() + 400L
-        syncController?.schedulePlay(0L, executionEpoch)
-        server?.broadcastPlay(0L, executionEpoch, deviceOrientation, bezelPercent)
+        // Resume from current position instead of resetting to 0, with fast 150ms execution epoch
+        val resumePos = syncController?.currentPositionMs ?: 0L
+        val executionEpoch = SystemClock.elapsedRealtime() + 150L
+        syncController?.schedulePlay(resumePos, executionEpoch)
+        server?.broadcastPlay(resumePos, executionEpoch, deviceOrientation, bezelPercent, scaleMode)
+        updatePlayPauseButtonStates(true)
         binding.hostTextureView.post {
             updateMatrix()
         }
@@ -711,8 +839,19 @@ class HostActivity : AppCompatActivity() {
         )
     }
 
+    override fun onResume() {
+        super.onResume()
+        progressHandler.post(progressRunnable)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        progressHandler.removeCallbacks(progressRunnable)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        progressHandler.removeCallbacks(progressRunnable)
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             networkCallback?.let { cm?.unregisterNetworkCallback(it) }
@@ -838,7 +977,7 @@ class ClientActivity : AppCompatActivity() {
                     syncController?.prepareMedia(Uri.parse(media.mediaUri))
                 }
             },
-            onPlayScheduled = { startPositionMs, localExecutionTimeMs, orientation, _ ->
+            onPlayScheduled = { startPositionMs, localExecutionTimeMs, orientation, bezel, scaleMode ->
                 runOnUiThread {
                     currentDeviceOrientation = orientation
                     // Enforce orientation synchronization across all screens
@@ -847,6 +986,11 @@ class ClientActivity : AppCompatActivity() {
                     } else {
                         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                     }
+                    currentRole = currentRole?.copy(
+                        scaleMode = scaleMode,
+                        deviceOrientation = orientation,
+                        bezelPercent = bezel
+                    )
                     syncController?.schedulePlay(startPositionMs, localExecutionTimeMs)
                     binding.layoutClientStatus.visibility = View.GONE
                     binding.clientTextureView.post {
@@ -854,9 +998,9 @@ class ClientActivity : AppCompatActivity() {
                     }
                 }
             },
-            onPause = { _ ->
+            onPause = { pausePositionMs ->
                 runOnUiThread {
-                    syncController?.pause()
+                    syncController?.pauseAndSeek(pausePositionMs)
                     binding.layoutClientStatus.visibility = View.VISIBLE
                 }
             },

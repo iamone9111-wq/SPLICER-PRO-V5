@@ -97,6 +97,116 @@
                     android:padding="6dp"
                     android:layout_marginBottom="12dp" />
 
+                <!-- YOUTUBE-STYLE VIDEO PROGRESS & TIME CONTROLS -->
+                <LinearLayout
+                    android:id="@+id/layoutVideoProgressControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#050811"
+                    android:padding="8dp"
+                    android:layout_marginBottom="10dp">
+
+                    <!-- Progress Scrubber -->
+                    <SeekBar
+                        android:id="@+id/videoSeekBar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="1000"
+                        android:progress="0"
+                        android:progressDrawable="@drawable/seekbar_progress"
+                        android:thumb="@drawable/seekbar_thumb"
+                        android:splitTrack="false"
+                        android:paddingStart="6dp"
+                        android:paddingEnd="6dp"
+                        android:layout_marginBottom="4dp" />
+
+                    <!-- Timestamp Row -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:id="@+id/tvCurrentTime"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="00:00"
+                            android:textColor="#38BDF8"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text=" / "
+                            android:textColor="#64748B"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/tvTotalDuration"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="00:00"
+                            android:textColor="#94A3B8"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace" />
+
+                        <TextView
+                            android:id="@+id/tvSyncStatusTag"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="● SYNC READY"
+                            android:textColor="#10B981"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <!-- Quick Seek & Master Play/Pause Row -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageButton
+                            android:id="@+id/btnRewind10"
+                            android:layout_width="44dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_replay_10"
+                            android:background="@drawable/bg_control_button"
+                            android:contentDescription="Rewind 10 seconds"
+                            android:scaleType="centerInside"
+                            android:padding="8dp" />
+
+                        <Button
+                            android:id="@+id/btnMasterPlayPause"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="8dp"
+                            android:text="▶ PLAY ALL"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:backgroundTint="#2563EB"
+                            android:textColor="#FFFFFF" />
+
+                        <ImageButton
+                            android:id="@+id/btnForward10"
+                            android:layout_width="44dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_forward_10"
+                            android:background="@drawable/bg_control_button"
+                            android:contentDescription="Forward 10 seconds"
+                            android:scaleType="centerInside"
+                            android:padding="8dp" />
+                    </LinearLayout>
+                </LinearLayout>
+
                 <!-- PLAY IMMERSION & PAUSE BUTTONS -->
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -115,14 +225,15 @@
                         android:backgroundTint="#10B981"
                         android:textColor="#FFFFFF" />
 
-                    <Button
+                    <ImageButton
                         android:id="@+id/btnPauseImmersion"
                         android:layout_width="52dp"
                         android:layout_height="52dp"
-                        android:text="⏸"
-                        android:textSize="18sp"
-                        android:backgroundTint="#1E293B"
-                        android:textColor="#FFFFFF"
+                        android:src="@drawable/ic_pause"
+                        android:background="@drawable/bg_control_button"
+                        android:contentDescription="Pause Immersion Playback"
+                        android:scaleType="centerInside"
+                        android:padding="12dp"
                         android:layout_marginStart="8dp" />
                 </LinearLayout>
             </LinearLayout>
@@ -438,14 +549,15 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
-                    <Button
+                    <ImageButton
                         android:id="@+id/btnDecreaseScreens"
                         android:layout_width="48dp"
                         android:layout_height="40dp"
-                        android:text="-"
-                        android:textSize="18sp"
-                        android:backgroundTint="#1E293B"
-                        android:textColor="#FFFFFF" />
+                        android:src="@drawable/ic_minus"
+                        android:background="@drawable/bg_control_button"
+                        android:contentDescription="Decrease Screens"
+                        android:scaleType="centerInside"
+                        android:padding="10dp" />
 
                     <TextView
                         android:id="@+id/tvTotalScreensValue"
@@ -458,14 +570,15 @@
                         android:textSize="18sp"
                         android:textStyle="bold" />
 
-                    <Button
+                    <ImageButton
                         android:id="@+id/btnIncreaseScreens"
                         android:layout_width="48dp"
                         android:layout_height="40dp"
-                        android:text="+"
-                        android:textSize="18sp"
-                        android:backgroundTint="#1E293B"
-                        android:textColor="#FFFFFF" />
+                        android:src="@drawable/ic_plus"
+                        android:background="@drawable/bg_control_button"
+                        android:contentDescription="Increase Screens"
+                        android:scaleType="centerInside"
+                        android:padding="10dp" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -501,14 +614,15 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical">
 
-                        <Button
+                        <ImageButton
                             android:id="@+id/btnDecreaseRows"
-                            android:layout_width="38dp"
+                            android:layout_width="40dp"
                             android:layout_height="36dp"
-                            android:text="-"
-                            android:textSize="16sp"
-                            android:backgroundTint="#1E293B"
-                            android:textColor="#FFFFFF" />
+                            android:src="@drawable/ic_minus"
+                            android:background="@drawable/bg_control_button"
+                            android:contentDescription="Decrease Rows"
+                            android:scaleType="centerInside"
+                            android:padding="9dp" />
 
                         <TextView
                             android:id="@+id/tvRowsValue"
@@ -521,14 +635,15 @@
                             android:textSize="16sp"
                             android:textStyle="bold" />
 
-                        <Button
+                        <ImageButton
                             android:id="@+id/btnIncreaseRows"
-                            android:layout_width="38dp"
+                            android:layout_width="40dp"
                             android:layout_height="36dp"
-                            android:text="+"
-                            android:textSize="16sp"
-                            android:backgroundTint="#1E293B"
-                            android:textColor="#FFFFFF" />
+                            android:src="@drawable/ic_plus"
+                            android:background="@drawable/bg_control_button"
+                            android:contentDescription="Increase Rows"
+                            android:scaleType="centerInside"
+                            android:padding="9dp" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -557,14 +672,15 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical">
 
-                        <Button
+                        <ImageButton
                             android:id="@+id/btnDecreaseCols"
-                            android:layout_width="38dp"
+                            android:layout_width="40dp"
                             android:layout_height="36dp"
-                            android:text="-"
-                            android:textSize="16sp"
-                            android:backgroundTint="#1E293B"
-                            android:textColor="#FFFFFF" />
+                            android:src="@drawable/ic_minus"
+                            android:background="@drawable/bg_control_button"
+                            android:contentDescription="Decrease Columns"
+                            android:scaleType="centerInside"
+                            android:padding="9dp" />
 
                         <TextView
                             android:id="@+id/tvColsValue"
@@ -577,14 +693,15 @@
                             android:textSize="16sp"
                             android:textStyle="bold" />
 
-                        <Button
+                        <ImageButton
                             android:id="@+id/btnIncreaseCols"
-                            android:layout_width="38dp"
+                            android:layout_width="40dp"
                             android:layout_height="36dp"
-                            android:text="+"
-                            android:textSize="16sp"
-                            android:backgroundTint="#1E293B"
-                            android:textColor="#FFFFFF" />
+                            android:src="@drawable/ic_plus"
+                            android:background="@drawable/bg_control_button"
+                            android:contentDescription="Increase Columns"
+                            android:scaleType="centerInside"
+                            android:padding="9dp" />
                     </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
@@ -724,47 +841,93 @@
         </LinearLayout>
     </ScrollView>
 
-    <!-- 2. IMMERSION CONTROLS (Floating top bar revealed during playback) -->
+    <!-- 2. IMMERSION CONTROLS (Floating HUD revealed during playback) -->
     <LinearLayout
         android:id="@+id/immersionOverlayControls"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="#CC0B1021"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="8dp"
-        android:layout_gravity="top|end"
-        android:layout_margin="16dp"
+        android:orientation="vertical"
+        android:background="#DD090D1C"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
+        android:layout_gravity="bottom"
         android:visibility="gone">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Full Immersion Progress Bar -->
+        <SeekBar
+            android:id="@+id/immersionSeekBar"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="WALL PLAYING"
-            android:textColor="#34D399"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:layout_marginEnd="10dp" />
+            android:max="1000"
+            android:progress="0"
+            android:progressDrawable="@drawable/seekbar_progress"
+            android:thumb="@drawable/seekbar_thumb"
+            android:splitTrack="false"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:layout_marginBottom="6dp" />
 
-        <Button
-            android:id="@+id/btnFloatingPause"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="⏸ Pause"
-            android:textSize="12sp"
-            android:backgroundTint="#1E293B"
-            android:textColor="#FFFFFF"
-            android:layout_marginEnd="6dp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-        <Button
-            android:id="@+id/btnExitImmersion"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="✕ Settings"
-            android:textSize="11sp"
-            android:backgroundTint="#5850EC"
-            android:textColor="#FFFFFF" />
+            <ImageButton
+                android:id="@+id/btnImmersionRewind10"
+                android:layout_width="40dp"
+                android:layout_height="38dp"
+                android:src="@drawable/ic_replay_10"
+                android:background="@drawable/bg_control_button"
+                android:contentDescription="Rewind 10s"
+                android:scaleType="centerInside"
+                android:padding="8dp" />
+
+            <Button
+                android:id="@+id/btnFloatingPause"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:text="⏸ Pause"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:backgroundTint="#2563EB"
+                android:textColor="#FFFFFF"
+                android:layout_marginStart="8dp" />
+
+            <ImageButton
+                android:id="@+id/btnImmersionForward10"
+                android:layout_width="40dp"
+                android:layout_height="38dp"
+                android:src="@drawable/ic_forward_10"
+                android:background="@drawable/bg_control_button"
+                android:contentDescription="Forward 10s"
+                android:scaleType="centerInside"
+                android:padding="8dp"
+                android:layout_marginStart="8dp" />
+
+            <TextView
+                android:id="@+id/tvImmersionTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="00:00 / 00:00"
+                android:textColor="#38BDF8"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginHorizontal="8dp" />
+
+            <Button
+                android:id="@+id/btnExitImmersion"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:text="✕ Settings"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:backgroundTint="#334155"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
     </LinearLayout>
 
 </FrameLayout>

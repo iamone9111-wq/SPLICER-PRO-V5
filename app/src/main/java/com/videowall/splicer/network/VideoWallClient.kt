@@ -19,7 +19,7 @@ class VideoWallClient(
     private val onConnectionFailed: ((error: String, attemptedIp: String) -> Unit)? = null,
     private val onRoleAssigned: (role: SyncMessage.AssignRole) -> Unit,
     private val onMediaPrepared: (media: SyncMessage.PrepareMedia) -> Unit,
-    private val onPlayScheduled: (startPositionMs: Long, localExecutionTimeMs: Long, orientation: DeviceOrientation, bezelPercent: Float) -> Unit,
+    private val onPlayScheduled: (startPositionMs: Long, localExecutionTimeMs: Long, orientation: DeviceOrientation, bezelPercent: Float, scaleMode: ScaleMode) -> Unit,
     private val onPause: (positionMs: Long) -> Unit,
     private val onSeekScheduled: (targetPositionMs: Long, localExecutionTimeMs: Long) -> Unit,
     private val onSyncOffsetUpdated: (offsetMs: Long, rttMs: Long) -> Unit,
@@ -138,10 +138,11 @@ class VideoWallClient(
                 }
                 is SyncMessage.SchedulePlay -> {
                     val localExecTime = message.hostExecutionEpochMs - clockOffsetMs
-                    onPlayScheduled(message.startPositionMs, localExecTime, message.deviceOrientation, message.bezelPercent)
+                    onPlayScheduled(message.startPositionMs, localExecTime, message.deviceOrientation, message.bezelPercent, message.scaleMode)
                 }
                 is SyncMessage.Pause -> {
-                    onPause(message.positionMs)
+                    val pos = if (message.currentPositionMs > 0) message.currentPositionMs else message.positionMs
+                    onPause(pos)
                 }
                 is SyncMessage.Seek -> {
                     val localExecTime = message.targetSystemTimeMs - clockOffsetMs

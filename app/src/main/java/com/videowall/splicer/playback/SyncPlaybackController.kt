@@ -71,6 +71,7 @@ class SyncPlaybackController(
     /**
      * Schedules the player to begin playback from [startPositionMs] at [localExecutionTimeMs].
      * Uses Coroutine delay with SystemClock.elapsedRealtime() for sub-millisecond precision.
+     * Skips redundant seek if already at the target position to guarantee instantaneous playback.
      */
     fun schedulePlay(startPositionMs: Long, localExecutionTimeMs: Long) {
         scheduledPlayJob?.cancel()
@@ -79,7 +80,11 @@ class SyncPlaybackController(
             val now = SystemClock.elapsedRealtime()
             val waitDurationMs = localExecutionTimeMs - now
 
-            exoPlayer?.seekTo(startPositionMs)
+            // Avoid redundant seeks which flush ExoPlayer decoder buffers and cause 1-2s lag
+            val curPos = exoPlayer?.currentPosition ?: 0L
+            if (Math.abs(curPos - startPositionMs) > 250L) {
+                exoPlayer?.seekTo(startPositionMs)
+            }
 
             if (waitDurationMs > 0) {
                 Log.d(tag, "Waiting ${waitDurationMs}ms until synchronized start at $localExecutionTimeMs")
@@ -98,8 +103,34 @@ class SyncPlaybackController(
         exoPlayer?.playWhenReady = false
     }
 
+    /**
+     * Pauses playback and pre-buffers the exact frame timestamp.
+     */
+    fun pauseAndSeek(positionMs: Long) {
+        scheduledPlayJob?.cancel()
+        exoPlayer?.playWhenReady = false
+        if (positionMs >= 0) {
+            val cur = exoPlayer?.currentPosition ?: 0L
+            if (Math.abs(cur - positionMs) > 200L) {
+                exoPlayer?.seekTo(positionMs)
+            }
+        }
+    }
+
     fun seekTo(positionMs: Long) {
         exoPlayer?.seekTo(positionMs)
+    }
+
+    fun seekRelative(deltaMs: Long): Long {
+        val cur = currentPositionMs
+        val dur = durationMs
+        val target = if (dur > 0) {
+            (cur + deltaMs).coerceIn(0L, dur)
+        } else {
+            (cur + deltaMs).coerceAtLeast(0L)
+        }
+        seekTo(target)
+        return target
     }
 
     /**
@@ -137,6 +168,9 @@ class SyncPlaybackController(
 
     val currentPositionMs: Long
         get() = exoPlayer?.currentPosition ?: 0L
+
+    val durationMs: Long
+        get() = exoPlayer?.duration?.takeIf { it > 0 } ?: 0L
 
     fun getCurrentPosition(): Long {
         return currentPositionMs

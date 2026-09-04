@@ -97,6 +97,7 @@ class VideoWallServer(
         deviceOrientation: DeviceOrientation = this.deviceOrientation,
         bezelPercent: Float = this.bezelPercent
     ) {
+        val mediaChanged = mediaUri != null && mediaUri != currentMediaUri
         gridRows = rows
         gridCols = cols
         configuredScreenCount = rows * cols
@@ -108,7 +109,7 @@ class VideoWallServer(
         this.bezelPercent = bezelPercent
 
         rebuildDefaultSlots(configuredScreenCount, currentOrientation, rows, cols)
-        broadcastRoleAssignments()
+        broadcastRoleAssignments(forceResendMedia = mediaChanged)
     }
 
     fun configureWall(
@@ -122,6 +123,7 @@ class VideoWallServer(
         height: Int = videoHeight,
         deviceOrientation: DeviceOrientation = this.deviceOrientation
     ) {
+        val mediaChanged = mediaUri != null && mediaUri != currentMediaUri
         configuredScreenCount = screenCount
         currentOrientation = orientation
         gridRows = rows
@@ -133,7 +135,7 @@ class VideoWallServer(
         this.deviceOrientation = deviceOrientation
 
         rebuildDefaultSlots(screenCount, orientation, rows, cols)
-        broadcastRoleAssignments()
+        broadcastRoleAssignments(forceResendMedia = mediaChanged)
     }
 
     /**
@@ -160,7 +162,7 @@ class VideoWallServer(
         }
     }
 
-    fun broadcastRoleAssignments() {
+    fun broadcastRoleAssignments(forceResendMedia: Boolean = false) {
         val totalScreens = maxOf(configuredScreenCount, connectedClients.size + 1)
         rebuildDefaultSlots(totalScreens, currentOrientation, gridRows, gridCols)
 
@@ -190,15 +192,17 @@ class VideoWallServer(
                 )
             )
 
-            currentMediaUri?.let { uri ->
-                client.sendMessage(
-                    SyncMessage.PrepareMedia(
-                        mediaUri = uri,
-                        videoWidth = videoWidth,
-                        videoHeight = videoHeight,
-                        durationMs = 0L
+            if (forceResendMedia) {
+                currentMediaUri?.let { uri ->
+                    client.sendMessage(
+                        SyncMessage.PrepareMedia(
+                            mediaUri = uri,
+                            videoWidth = videoWidth,
+                            videoHeight = videoHeight,
+                            durationMs = 0L
+                        )
                     )
-                )
+                }
             }
         }
     }
@@ -207,23 +211,26 @@ class VideoWallServer(
         startPositionMs: Long,
         targetTimeEpochMs: Long,
         deviceOrientation: DeviceOrientation = this.deviceOrientation,
-        bezelPercent: Float = this.bezelPercent
+        bezelPercent: Float = this.bezelPercent,
+        scaleMode: ScaleMode = this.currentScaleMode
     ) {
         val message = SyncMessage.SchedulePlay(
             startPositionMs = startPositionMs,
             targetSystemTimeMs = targetTimeEpochMs,
             hostExecutionEpochMs = targetTimeEpochMs,
             deviceOrientation = deviceOrientation,
-            bezelPercent = bezelPercent
+            bezelPercent = bezelPercent,
+            scaleMode = scaleMode
         )
         connectedClients.forEach { it.sendMessage(message) }
     }
 
     fun broadcastSchedulePlay(
         startPositionMs: Long,
-        executionDelayMs: Long = 500L,
+        executionDelayMs: Long = 200L,
         deviceOrientation: DeviceOrientation = this.deviceOrientation,
-        bezelPercent: Float = this.bezelPercent
+        bezelPercent: Float = this.bezelPercent,
+        scaleMode: ScaleMode = this.currentScaleMode
     ): Long {
         val targetSystemTimeMs = SystemClock.elapsedRealtime() + executionDelayMs
         val message = SyncMessage.SchedulePlay(
@@ -231,7 +238,8 @@ class VideoWallServer(
             targetSystemTimeMs = targetSystemTimeMs,
             hostExecutionEpochMs = targetSystemTimeMs,
             deviceOrientation = deviceOrientation,
-            bezelPercent = bezelPercent
+            bezelPercent = bezelPercent,
+            scaleMode = scaleMode
         )
         connectedClients.forEach { client ->
             client.sendMessage(message)

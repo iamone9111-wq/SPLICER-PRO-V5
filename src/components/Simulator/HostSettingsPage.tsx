@@ -20,6 +20,8 @@ import {
   Play,
   Pause,
   RotateCcw,
+  FastForward,
+  Rewind,
   Upload,
   ArrowLeft,
   Tv,
@@ -218,38 +220,81 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
         </div>
 
         {/* Minimal Subtle Floating Bar: reveals on hover / tap to control playback & exit without disturbance */}
-        <div className="absolute top-4 right-4 opacity-90 hover:opacity-100 transition-opacity duration-300 pointer-events-auto flex items-center gap-2 bg-black/85 backdrop-blur-md px-3.5 py-2 rounded-full border border-white/20 text-xs font-mono text-white shadow-2xl">
-          <span className="text-emerald-400 font-bold flex items-center gap-1.5 pr-1">
+        <div className="absolute top-4 right-4 max-w-[95vw] opacity-90 hover:opacity-100 transition-opacity duration-300 pointer-events-auto flex items-center gap-2.5 bg-black/90 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/20 text-xs font-mono text-white shadow-2xl">
+          <span className="text-emerald-400 font-bold flex items-center gap-1.5 pr-1 shrink-0">
             <span className={`w-2 h-2 rounded-full ${isPlaying ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
-            {isPlaying ? `PLAYING (${totalDevices} SCREENS)` : 'PAUSED'}
+            {isPlaying ? 'PLAYING' : 'PAUSED'}
           </span>
-          <button
-            onClick={onTogglePlay}
-            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-full text-xs font-bold transition-all active:scale-95"
-            title={isPlaying ? 'Pause Playback' : 'Resume Playback'}
-          >
-            {isPlaying ? (
-              <>
-                <Pause className="w-3.5 h-3.5 fill-current" />
-                <span>Pause</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Play</span>
-              </>
-            )}
-          </button>
-          <button
-            onClick={onRestart}
-            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
-            title="Restart Video From Beginning"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
+
+          {/* Mini Scrubber */}
+          <div className="hidden sm:flex items-center gap-2 w-48 shrink-0">
+            <span className="text-[10px] text-slate-300 min-w-[28px] text-right">
+              {Math.floor(currentTime / 60)}:{(Math.floor(currentTime % 60)).toString().padStart(2, '0')}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(1, duration || 60)}
+              step={0.25}
+              value={currentTime}
+              onChange={(e) => onSeek(parseFloat(e.target.value))}
+              className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-600"
+              title="Seek"
+            />
+            <span className="text-[10px] text-slate-400 min-w-[28px]">
+              {Math.floor((duration || 60) / 60)}:{(Math.floor((duration || 60) % 60)).toString().padStart(2, '0')}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => onSeek(Math.max(0, currentTime - 10))}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
+              title="Rewind 10s"
+            >
+              <Rewind className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={onTogglePlay}
+              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-full text-xs font-bold transition-all active:scale-95"
+              title={isPlaying ? 'Pause Playback' : 'Resume Playback'}
+            >
+              {isPlaying ? (
+                <>
+                  <Pause className="w-3.5 h-3.5 fill-current" />
+                  <span>Pause</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Play</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => onSeek(Math.min(duration || 60, currentTime + 10))}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
+              title="Forward 10s"
+            >
+              <FastForward className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={onRestart}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
+              title="Restart Video From Beginning"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-white/20" />
+
           <button
             onClick={handleExitImmersion}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-full text-xs font-medium transition-colors shrink-0"
           >
             <Minimize2 className="w-3.5 h-3.5" />
             <span>Settings</span>
@@ -373,6 +418,81 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
               onToggleDeviceEnabled={onToggleDeviceEnabled}
             />
           ))}
+        </div>
+
+        {/* YouTube-Style Video Scrubber & Playback Controls Bar */}
+        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+          {/* Progress Slider Track with YouTube Red Accent */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono text-slate-300 font-medium min-w-[36px] text-right">
+              {Math.floor(currentTime / 60)}:{(Math.floor(currentTime % 60)).toString().padStart(2, '0')}
+            </span>
+            <div className="relative flex-1 flex items-center group">
+              <input
+                type="range"
+                min={0}
+                max={Math.max(1, duration || 60)}
+                step={0.25}
+                value={currentTime}
+                onChange={(e) => onSeek(parseFloat(e.target.value))}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-red-600 group-hover:h-2 transition-all"
+                title="Seek Video Position"
+              />
+            </div>
+            <span className="text-[11px] font-mono text-slate-400 min-w-[36px]">
+              {Math.floor((duration || 60) / 60)}:{(Math.floor((duration || 60) % 60)).toString().padStart(2, '0')}
+            </span>
+          </div>
+
+          {/* Quick Playback Transport Toolbar */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={onTogglePlay}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                  isPlaying
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                }`}
+                title={isPlaying ? 'Pause' : 'Play'}
+              >
+                {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                <span>{isPlaying ? 'Pause' : 'Play'}</span>
+              </button>
+
+              <button
+                onClick={() => onSeek(Math.max(0, currentTime - 10))}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-mono transition-colors"
+                title="Rewind 10 Seconds"
+              >
+                <Rewind className="w-3 h-3" />
+                <span>-10s</span>
+              </button>
+
+              <button
+                onClick={() => onSeek(Math.min(duration || 60, currentTime + 10))}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-mono transition-colors"
+                title="Forward 10 Seconds"
+              >
+                <span>+10s</span>
+                <FastForward className="w-3 h-3" />
+              </button>
+
+              <button
+                onClick={onRestart}
+                className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-colors"
+                title="Restart Video From 00:00"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2">
+              <span className={isPlaying ? 'text-emerald-400 font-bold' : 'text-amber-400 font-medium'}>
+                {isPlaying ? '● SYNCED PLAYING' : '❚❚ PAUSED'}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Large Prominent "Play All" Action Trigger + Quick Play/Pause */}
@@ -680,16 +800,18 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
               <span className="text-slate-400 font-medium pl-1">Rows:</span>
               <button
                 onClick={() => setGridRows(Math.max(1, gridRows - 1))}
-                className="w-6 h-6 rounded bg-[#0e142a] text-white flex items-center justify-center font-bold text-xs"
+                className="w-6 h-6 rounded bg-[#0e142a] hover:bg-[#192244] border border-[#212b48] text-white flex items-center justify-center font-bold text-xs transition-colors"
+                title="Decrease Rows"
               >
-                -
+                <Minus className="w-3 h-3" />
               </button>
               <span className="font-mono font-bold text-indigo-300 px-1">{gridRows}</span>
               <button
                 onClick={() => setGridRows(Math.min(8, gridRows + 1))}
-                className="w-6 h-6 rounded bg-[#0e142a] text-white flex items-center justify-center font-bold text-xs"
+                className="w-6 h-6 rounded bg-[#0e142a] hover:bg-[#192244] border border-[#212b48] text-white flex items-center justify-center font-bold text-xs transition-colors"
+                title="Increase Rows"
               >
-                +
+                <Plus className="w-3 h-3" />
               </button>
             </div>
 
@@ -697,16 +819,18 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
               <span className="text-slate-400 font-medium pl-1">Cols:</span>
               <button
                 onClick={() => setGridCols(Math.max(1, gridCols - 1))}
-                className="w-6 h-6 rounded bg-[#0e142a] text-white flex items-center justify-center font-bold text-xs"
+                className="w-6 h-6 rounded bg-[#0e142a] hover:bg-[#192244] border border-[#212b48] text-white flex items-center justify-center font-bold text-xs transition-colors"
+                title="Decrease Columns"
               >
-                -
+                <Minus className="w-3 h-3" />
               </button>
               <span className="font-mono font-bold text-indigo-300 px-1">{gridCols}</span>
               <button
                 onClick={() => setGridCols(Math.min(8, gridCols + 1))}
-                className="w-6 h-6 rounded bg-[#0e142a] text-white flex items-center justify-center font-bold text-xs"
+                className="w-6 h-6 rounded bg-[#0e142a] hover:bg-[#192244] border border-[#212b48] text-white flex items-center justify-center font-bold text-xs transition-colors"
+                title="Increase Columns"
               >
-                +
+                <Plus className="w-3 h-3" />
               </button>
             </div>
           </div>
