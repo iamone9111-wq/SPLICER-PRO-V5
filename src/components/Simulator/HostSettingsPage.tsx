@@ -136,6 +136,46 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
 }) => {
   // Immersion Mode state: when Play All is active and user wants zero disturbance
   const [isImmersionMode, setIsImmersionMode] = useState<boolean>(false);
+  const [showImmersionControls, setShowImmersionControls] = useState<boolean>(true);
+  const controlsTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const resetDissolveTimer = () => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowImmersionControls(false);
+    }, 2000);
+  };
+
+  React.useEffect(() => {
+    if (isImmersionMode) {
+      setShowImmersionControls(true);
+      resetDissolveTimer();
+    } else {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [isImmersionMode]);
+
+  const handleImmersionScreenClick = () => {
+    if (showImmersionControls) {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      setShowImmersionControls(false);
+    } else {
+      setShowImmersionControls(true);
+      resetDissolveTimer();
+    }
+  };
+
   const [selectedScreenNumber, setSelectedScreenNumber] = useState<number>(0);
   const [selectedSlot, setSelectedSlot] = useState<{ row: number; col: number } | null>(null);
   const [isRotatedLandscape, setIsRotatedLandscape] = useState<boolean>(false);
@@ -176,7 +216,10 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
   // -------------------------------------------------------------
   if (isImmersionMode) {
     return (
-      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center select-none overflow-hidden group">
+      <div
+        onClick={handleImmersionScreenClick}
+        className="fixed inset-0 z-50 bg-black flex items-center justify-center select-none overflow-hidden cursor-pointer"
+      >
         {/* The Seamless Multi-Screen Video Wall Playing with Zero Disturbance */}
         <div
           className={`w-full h-full flex items-center justify-center transition-transform duration-500 ${
@@ -219,8 +262,24 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
           </div>
         </div>
 
-        {/* Minimal Subtle Floating Bar: reveals on hover / tap to control playback & exit without disturbance */}
-        <div className="absolute top-4 right-4 max-w-[95vw] opacity-90 hover:opacity-100 transition-opacity duration-300 pointer-events-auto flex items-center gap-2.5 bg-black/90 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/20 text-xs font-mono text-white shadow-2xl">
+        {/* Minimal Subtle Floating Bar: appears immediately, dissolves after 2s or on tap */}
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            resetDissolveTimer();
+          }}
+          onMouseEnter={() => {
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+          }}
+          onMouseLeave={() => {
+            resetDissolveTimer();
+          }}
+          className={`absolute top-4 right-4 max-w-[95vw] transition-all duration-300 pointer-events-auto flex items-center gap-2.5 bg-black/90 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/20 text-xs font-mono text-white shadow-2xl ${
+            showImmersionControls
+              ? 'opacity-100 scale-100 pointer-events-auto'
+              : 'opacity-0 scale-95 pointer-events-none'
+          }`}
+        >
           <span className="text-emerald-400 font-bold flex items-center gap-1.5 pr-1 shrink-0">
             <span className={`w-2 h-2 rounded-full ${isPlaying ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
             {isPlaying ? 'PLAYING' : 'PAUSED'}
@@ -420,81 +479,6 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
           ))}
         </div>
 
-        {/* YouTube-Style Video Scrubber & Playback Controls Bar */}
-        <div className="pt-2 border-t border-slate-800/80 space-y-2">
-          {/* Progress Slider Track with YouTube Red Accent */}
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-slate-300 font-medium min-w-[36px] text-right">
-              {Math.floor(currentTime / 60)}:{(Math.floor(currentTime % 60)).toString().padStart(2, '0')}
-            </span>
-            <div className="relative flex-1 flex items-center group">
-              <input
-                type="range"
-                min={0}
-                max={Math.max(1, duration || 60)}
-                step={0.25}
-                value={currentTime}
-                onChange={(e) => onSeek(parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-red-600 group-hover:h-2 transition-all"
-                title="Seek Video Position"
-              />
-            </div>
-            <span className="text-[11px] font-mono text-slate-400 min-w-[36px]">
-              {Math.floor((duration || 60) / 60)}:{(Math.floor((duration || 60) % 60)).toString().padStart(2, '0')}
-            </span>
-          </div>
-
-          {/* Quick Playback Transport Toolbar */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={onTogglePlay}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
-                  isPlaying
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
-                }`}
-                title={isPlaying ? 'Pause' : 'Play'}
-              >
-                {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-                <span>{isPlaying ? 'Pause' : 'Play'}</span>
-              </button>
-
-              <button
-                onClick={() => onSeek(Math.max(0, currentTime - 10))}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-mono transition-colors"
-                title="Rewind 10 Seconds"
-              >
-                <Rewind className="w-3 h-3" />
-                <span>-10s</span>
-              </button>
-
-              <button
-                onClick={() => onSeek(Math.min(duration || 60, currentTime + 10))}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-mono transition-colors"
-                title="Forward 10 Seconds"
-              >
-                <span>+10s</span>
-                <FastForward className="w-3 h-3" />
-              </button>
-
-              <button
-                onClick={onRestart}
-                className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-colors"
-                title="Restart Video From 00:00"
-              >
-                <RotateCcw className="w-3 h-3" />
-              </button>
-            </div>
-
-            <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2">
-              <span className={isPlaying ? 'text-emerald-400 font-bold' : 'text-amber-400 font-medium'}>
-                {isPlaying ? '● SYNCED PLAYING' : '❚❚ PAUSED'}
-              </span>
-            </div>
-          </div>
-        </div>
-
         {/* Large Prominent "Play All" Action Trigger + Quick Play/Pause */}
         <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="w-full sm:w-auto flex-1 flex items-center gap-2">
@@ -555,13 +539,6 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
               <span>Host IP & Network</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => alert("Network refreshed: Listening on 192.168.43.1 (Hotspot/AP) with Dual-Routing enabled.")}
-                className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-emerald-300 transition-colors"
-                title="Refresh Network IP"
-              >
-                <RefreshCw className="w-3 h-3" />
-              </button>
               <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">
                 BROADCASTING
               </span>

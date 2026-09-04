@@ -63,7 +63,6 @@ class MainActivity : AppCompatActivity() {
         // Preset Hotspot IP button
         binding.btnUseHotspotIp.setOnClickListener {
             binding.inputHostIp.setText("192.168.43.1")
-            Toast.makeText(this, "Set to standard Android Hotspot Gateway (192.168.43.1)", Toast.LENGTH_SHORT).show()
         }
 
         // Join option clicked
@@ -136,16 +135,58 @@ class HostActivity : AppCompatActivity() {
                 val duration = syncController?.durationMs ?: 0L
                 if (duration > 0) {
                     val progress = ((current.toDouble() / duration.toDouble()) * 1000).toInt()
-                    binding.videoSeekBar.progress = progress
                     binding.immersionSeekBar.progress = progress
                     val curStr = formatTime(current)
                     val durStr = formatTime(duration)
-                    binding.tvCurrentTime.text = curStr
-                    binding.tvTotalDuration.text = durStr
                     binding.tvImmersionTime.text = "$curStr / $durStr"
                 }
             }
             progressHandler.postDelayed(this, 250)
+        }
+    }
+
+    // Auto-dissolve timer for Immersion Playback Controls
+    private val controlsDissolveHandler = Handler(Looper.getMainLooper())
+    private val controlsDissolveRunnable = Runnable {
+        dissolveImmersionControls()
+    }
+
+    private fun scheduleControlsDissolve(delayMs: Long = 2000L) {
+        controlsDissolveHandler.removeCallbacks(controlsDissolveRunnable)
+        controlsDissolveHandler.postDelayed(controlsDissolveRunnable, delayMs)
+    }
+
+    private fun dissolveImmersionControls() {
+        if (binding.immersionOverlayControls.visibility == View.VISIBLE) {
+            binding.immersionOverlayControls.animate()
+                .alpha(0f)
+                .setDuration(250)
+                .withEndAction {
+                    binding.immersionOverlayControls.visibility = View.GONE
+                }
+                .start()
+        }
+    }
+
+    private fun showImmersionControls() {
+        controlsDissolveHandler.removeCallbacks(controlsDissolveRunnable)
+        binding.immersionOverlayControls.visibility = View.VISIBLE
+        binding.immersionOverlayControls.animate()
+            .alpha(1f)
+            .setDuration(150)
+            .start()
+        scheduleControlsDissolve(2000L)
+    }
+
+    private fun toggleImmersionControls() {
+        // Only active when in immersion mode
+        if (binding.hostSettingsScrollView.visibility == View.GONE) {
+            if (binding.immersionOverlayControls.visibility == View.VISIBLE && binding.immersionOverlayControls.alpha > 0.1f) {
+                controlsDissolveHandler.removeCallbacks(controlsDissolveRunnable)
+                dissolveImmersionControls()
+            } else {
+                showImmersionControls()
+            }
         }
     }
 
@@ -162,7 +203,6 @@ class HostActivity : AppCompatActivity() {
             mediaServer?.setMediaUri(it)
             extractAndApplyVideoMetadata(it)
             syncController?.prepareMedia(it)
-            Toast.makeText(this, "🎬 Local video loaded & ready to stream", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -351,7 +391,6 @@ class HostActivity : AppCompatActivity() {
                 val pasted = clipData.getItemAt(0).text?.toString()?.trim() ?: ""
                 if (pasted.isNotEmpty()) {
                     binding.etYoutubeUrl.setText(pasted)
-                    Toast.makeText(this, "Pasted URL from clipboard", Toast.LENGTH_SHORT).show()
                 }
             } else {
                 Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
@@ -398,15 +437,23 @@ class HostActivity : AppCompatActivity() {
             togglePlayPause()
         }
 
-        binding.btnMasterPlayPause.setOnClickListener {
-            togglePlayPause()
-        }
-
         binding.btnFloatingPause.setOnClickListener {
             togglePlayPause()
+            scheduleControlsDissolve(2000L)
         }
 
-        // YouTube-style SeekBars (Dashboard and Immersion HUD)
+        // Tap screen in immersion mode to toggle HUD controls
+        binding.hostTextureView.setOnClickListener {
+            toggleImmersionControls()
+        }
+
+        // Interacting with overlay controls keeps them active
+        binding.immersionOverlayControls.setOnTouchListener { _, _ ->
+            scheduleControlsDissolve(2000L)
+            false
+        }
+
+        // Immersion Video Progress Scrubber
         val seekBarListener = object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
@@ -414,13 +461,13 @@ class HostActivity : AppCompatActivity() {
                     val targetMs = ((progress / 1000f) * duration).toLong()
                     val curStr = formatTime(targetMs)
                     val durStr = formatTime(duration)
-                    binding.tvCurrentTime.text = curStr
                     binding.tvImmersionTime.text = "$curStr / $durStr"
                 }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 isUserSeeking = true
+                controlsDissolveHandler.removeCallbacks(controlsDissolveRunnable)
             }
 
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
@@ -438,13 +485,13 @@ class HostActivity : AppCompatActivity() {
                     syncController?.schedulePlay(targetMs, execTime)
                     server?.broadcastPlay(targetMs, execTime, deviceOrientation, bezelPercent, scaleMode)
                 }
+                scheduleControlsDissolve(2000L)
             }
         }
-        binding.videoSeekBar.setOnSeekBarChangeListener(seekBarListener)
         binding.immersionSeekBar.setOnSeekBarChangeListener(seekBarListener)
 
-        // 10s Rewind / Forward Controls
-        val rewindAction = View.OnClickListener {
+        // 10s Rewind / Forward Controls in Immersion HUD
+        binding.btnImmersionRewind10.setOnClickListener {
             val target = syncController?.seekRelative(-10000L) ?: 0L
             server?.broadcastSeek(target)
             if (syncController?.isPlaying() == true) {
@@ -452,12 +499,10 @@ class HostActivity : AppCompatActivity() {
                 syncController?.schedulePlay(target, exec)
                 server?.broadcastPlay(target, exec, deviceOrientation, bezelPercent, scaleMode)
             }
-            Toast.makeText(this, "⏪ Rewind 10s (${formatTime(target)})", Toast.LENGTH_SHORT).show()
+            scheduleControlsDissolve(2000L)
         }
-        binding.btnRewind10.setOnClickListener(rewindAction)
-        binding.btnImmersionRewind10.setOnClickListener(rewindAction)
 
-        val forwardAction = View.OnClickListener {
+        binding.btnImmersionForward10.setOnClickListener {
             val target = syncController?.seekRelative(10000L) ?: 0L
             server?.broadcastSeek(target)
             if (syncController?.isPlaying() == true) {
@@ -465,10 +510,8 @@ class HostActivity : AppCompatActivity() {
                 syncController?.schedulePlay(target, exec)
                 server?.broadcastPlay(target, exec, deviceOrientation, bezelPercent, scaleMode)
             }
-            Toast.makeText(this, "⏩ Forward 10s (${formatTime(target)})", Toast.LENGTH_SHORT).show()
+            scheduleControlsDissolve(2000L)
         }
-        binding.btnForward10.setOnClickListener(forwardAction)
-        binding.btnImmersionForward10.setOnClickListener(forwardAction)
 
         // Screen Count controls
         binding.btnDecreaseScreens.setOnClickListener {
@@ -545,8 +588,6 @@ class HostActivity : AppCompatActivity() {
             updateLayoutUI()
             updateMatrix()
             broadcastConfiguration()
-            val msg = if (deviceOrientation == DeviceOrientation.HORIZONTAL) "Horizontal (Landscape) placement selected" else "Vertical (Portrait) placement selected"
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
 
         // Scale Mode Toggle (Real Ratio / Full Wall Cover / Stretch)
@@ -585,14 +626,10 @@ class HostActivity : AppCompatActivity() {
             }
             updateMatrix()
             broadcastConfiguration()
-            val label = when (bezelPercent) {
-                0.0f -> "Bezels off"
-                else -> "Bezel compensation set to ${bezelPercent}%"
-            }
-            Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
         }
 
         binding.btnExitImmersion.setOnClickListener {
+            controlsDissolveHandler.removeCallbacks(controlsDissolveRunnable)
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             binding.immersionOverlayControls.visibility = View.GONE
             binding.hostSettingsScrollView.visibility = View.VISIBLE
@@ -607,34 +644,24 @@ class HostActivity : AppCompatActivity() {
             syncController?.pause()
             server?.broadcastPause(pausePos)
             updatePlayPauseButtonStates(false)
-            Toast.makeText(this, "⏸ Paused all screens at ${formatTime(pausePos)}", Toast.LENGTH_SHORT).show()
         } else {
             val resumePos = syncController?.currentPositionMs ?: 0L
             val execTime = SystemClock.elapsedRealtime() + 150L
             syncController?.schedulePlay(resumePos, execTime)
             server?.broadcastPlay(resumePos, execTime, deviceOrientation, bezelPercent, scaleMode)
             updatePlayPauseButtonStates(true)
-            Toast.makeText(this, "▶ Resumed playback at ${formatTime(resumePos)}", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun updatePlayPauseButtonStates(isPlaying: Boolean) {
         if (isPlaying) {
-            binding.btnMasterPlayPause.text = "⏸ PAUSE ALL"
-            binding.btnMasterPlayPause.setBackgroundColor(Color.parseColor("#EF4444"))
             binding.btnFloatingPause.text = "⏸ Pause"
             binding.btnFloatingPause.setBackgroundColor(Color.parseColor("#EF4444"))
             binding.btnPauseImmersion.setImageResource(R.drawable.ic_pause)
-            binding.tvSyncStatusTag.text = "● PLAYING SYNC"
-            binding.tvSyncStatusTag.setTextColor(Color.parseColor("#10B981"))
         } else {
-            binding.btnMasterPlayPause.text = "▶ PLAY ALL"
-            binding.btnMasterPlayPause.setBackgroundColor(Color.parseColor("#2563EB"))
             binding.btnFloatingPause.text = "▶ Play"
             binding.btnFloatingPause.setBackgroundColor(Color.parseColor("#2563EB"))
             binding.btnPauseImmersion.setImageResource(R.drawable.ic_play_arrow)
-            binding.tvSyncStatusTag.text = "⏸ PAUSED"
-            binding.tvSyncStatusTag.setTextColor(Color.parseColor("#F59E0B"))
         }
     }
 
@@ -657,7 +684,7 @@ class HostActivity : AppCompatActivity() {
         }
 
         binding.hostSettingsScrollView.visibility = View.GONE
-        binding.immersionOverlayControls.visibility = View.VISIBLE
+        showImmersionControls()
         hideSystemUI()
 
         // Resume from current position instead of resetting to 0, with fast 150ms execution epoch
@@ -794,7 +821,6 @@ class HostActivity : AppCompatActivity() {
                 binding.tvSelectedVideo.text = "🎬 ${resolved.title} • ${resolved.width}×${resolved.height} ($ratioText) • Stream Ready"
                 updateMatrix()
                 broadcastConfiguration()
-                Toast.makeText(this@HostActivity, "✅ Video stream ready: ${resolved.title}", Toast.LENGTH_SHORT).show()
             }.onFailure { err ->
                 Log.e("HostActivity", "Failed to resolve stream: ${err.message}", err)
                 binding.tvSelectedVideo.text = "⚠️ Failed: ${err.message}"
@@ -817,10 +843,6 @@ class HostActivity : AppCompatActivity() {
         beaconJob?.cancel()
         beaconJob = DiscoveryService.startBroadcasting(lifecycleScope, hostIp, 8988, this)
         broadcastConfiguration()
-
-        if (showToast) {
-            Toast.makeText(this, "📶 Network refreshed: $hostIp", Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun getLocalIpAddress(): String {
@@ -968,12 +990,10 @@ class ClientActivity : AppCompatActivity() {
                     binding.clientTextureView.post {
                         applyMatrix(role)
                     }
-                    Toast.makeText(this@ClientActivity, "📱 Screen #$screenNum • Placed $orientText", Toast.LENGTH_SHORT).show()
                 }
             },
             onMediaPrepared = { media ->
                 runOnUiThread {
-                    Toast.makeText(this@ClientActivity, "🎬 Media stream buffered from Host", Toast.LENGTH_SHORT).show()
                     syncController?.prepareMedia(Uri.parse(media.mediaUri))
                 }
             },

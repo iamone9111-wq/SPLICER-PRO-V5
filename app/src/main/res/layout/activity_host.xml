@@ -97,122 +97,13 @@
                     android:padding="6dp"
                     android:layout_marginBottom="12dp" />
 
-                <!-- YOUTUBE-STYLE VIDEO PROGRESS & TIME CONTROLS -->
-                <LinearLayout
-                    android:id="@+id/layoutVideoProgressControls"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#050811"
-                    android:padding="8dp"
-                    android:layout_marginBottom="10dp">
-
-                    <!-- Progress Scrubber -->
-                    <SeekBar
-                        android:id="@+id/videoSeekBar"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:max="1000"
-                        android:progress="0"
-                        android:progressDrawable="@drawable/seekbar_progress"
-                        android:thumb="@drawable/seekbar_thumb"
-                        android:splitTrack="false"
-                        android:paddingStart="6dp"
-                        android:paddingEnd="6dp"
-                        android:layout_marginBottom="4dp" />
-
-                    <!-- Timestamp Row -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="8dp">
-
-                        <TextView
-                            android:id="@+id/tvCurrentTime"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="00:00"
-                            android:textColor="#38BDF8"
-                            android:textSize="11sp"
-                            android:fontFamily="monospace"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text=" / "
-                            android:textColor="#64748B"
-                            android:textSize="11sp" />
-
-                        <TextView
-                            android:id="@+id/tvTotalDuration"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="00:00"
-                            android:textColor="#94A3B8"
-                            android:textSize="11sp"
-                            android:fontFamily="monospace" />
-
-                        <TextView
-                            android:id="@+id/tvSyncStatusTag"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="● SYNC READY"
-                            android:textColor="#10B981"
-                            android:textSize="10sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <!-- Quick Seek & Master Play/Pause Row -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <ImageButton
-                            android:id="@+id/btnRewind10"
-                            android:layout_width="44dp"
-                            android:layout_height="40dp"
-                            android:src="@drawable/ic_replay_10"
-                            android:background="@drawable/bg_control_button"
-                            android:contentDescription="Rewind 10 seconds"
-                            android:scaleType="centerInside"
-                            android:padding="8dp" />
-
-                        <Button
-                            android:id="@+id/btnMasterPlayPause"
-                            android:layout_width="0dp"
-                            android:layout_height="40dp"
-                            android:layout_weight="1"
-                            android:layout_marginHorizontal="8dp"
-                            android:text="▶ PLAY ALL"
-                            android:textSize="12sp"
-                            android:textStyle="bold"
-                            android:backgroundTint="#2563EB"
-                            android:textColor="#FFFFFF" />
-
-                        <ImageButton
-                            android:id="@+id/btnForward10"
-                            android:layout_width="44dp"
-                            android:layout_height="40dp"
-                            android:src="@drawable/ic_forward_10"
-                            android:background="@drawable/bg_control_button"
-                            android:contentDescription="Forward 10 seconds"
-                            android:scaleType="centerInside"
-                            android:padding="8dp" />
-                    </LinearLayout>
-                </LinearLayout>
-
                 <!-- PLAY IMMERSION & PAUSE BUTTONS -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="12dp">
 
                     <Button
                         android:id="@+id/btnPlayImmersion"
