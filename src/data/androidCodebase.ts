@@ -142,18 +142,14 @@ dependencies {
         <activity
             android:name=".ui.HostActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
-            android:keepScreenOn="true" />
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />
 
         <!-- Client Screen Activity (Hardware Accelerated TextureView) -->
         <activity
             android:name=".ui.ClientActivity"
             android:exported="false"
             android:hardwareAccelerated="true"
-            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
-            android:keepScreenOn="true"
             android:theme="@style/Theme.VideoWallSplicer.Fullscreen" />
 
     </application>
@@ -1151,6 +1147,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -1243,6 +1240,11 @@ class HostActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityHostBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Keep host screen awake during video wall operation and playback
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        binding.root.keepScreenOn = true
+        binding.hostTextureView.keepScreenOn = true
 
         val hostIp = getLocalIpAddress()
         binding.tvHostIp.text = hostIp
@@ -1424,6 +1426,9 @@ class HostActivity : AppCompatActivity() {
         server?.stop()
         httpServer?.stop()
         syncController?.release()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        binding.root.keepScreenOn = false
+        binding.hostTextureView.keepScreenOn = false
     }
 }
 
@@ -1435,10 +1440,27 @@ class ClientActivity : AppCompatActivity() {
     private var videoWidth = 1920
     private var videoHeight = 1080
 
+    private fun setScreenAwake(awake: Boolean) {
+        runOnUiThread {
+            if (awake) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                binding.root.keepScreenOn = true
+                binding.clientTextureView.keepScreenOn = true
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                binding.root.keepScreenOn = false
+                binding.clientTextureView.keepScreenOn = false
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityClientBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Keep connected client display awake until disconnected, app closed, or power button pressed
+        setScreenAwake(true)
 
         val hostIp = intent.getStringExtra("HOST_IP") ?: "192.168.43.1"
 
@@ -1452,6 +1474,7 @@ class ClientActivity : AppCompatActivity() {
             hostIp = hostIp,
             port = 8988,
             onRoleAssigned = { role ->
+                setScreenAwake(true)
                 currentRole = role
                 val screenNum = role.deviceIndex + 1
                 binding.tvScreenIndex.text = "Screen \$screenNum of \${role.totalDevices} [R\${role.row}:C\${role.col}]"
@@ -1464,6 +1487,7 @@ class ClientActivity : AppCompatActivity() {
                 currentRole?.let { applyMatrix(it) }
             },
             onPlayScheduled = { startPos, localExecTime ->
+                setScreenAwake(true)
                 syncController?.schedulePlay(startPos, localExecTime)
             },
             onPause = { _ ->
@@ -1508,6 +1532,7 @@ class ClientActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        setScreenAwake(false)
         client?.disconnect()
         syncController?.release()
     }

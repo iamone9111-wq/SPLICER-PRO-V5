@@ -17,6 +17,7 @@ class VideoWallClient(
     private val fallbackIp: String? = "192.168.43.1",
     private val onConnected: ((hostIp: String) -> Unit)? = null,
     private val onConnectionFailed: ((error: String, attemptedIp: String) -> Unit)? = null,
+    private val onDisconnected: (() -> Unit)? = null,
     private val onRoleAssigned: (role: SyncMessage.AssignRole) -> Unit,
     private val onMediaPrepared: (media: SyncMessage.PrepareMedia) -> Unit,
     private val onPlayScheduled: (startPositionMs: Long, localExecutionTimeMs: Long, orientation: DeviceOrientation, bezelPercent: Float, scaleMode: ScaleMode) -> Unit,
@@ -80,7 +81,13 @@ class VideoWallClient(
                         val line = reader?.readLine() ?: break
                         handleHostMessage(line)
                     }
-                } catch (e: Exception) {}
+                } catch (e: Exception) {
+                    Log.d(tag, "Client connection ended: ${e.message}")
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        onDisconnected?.invoke()
+                    }
+                }
             }
             true
         } catch (e: Exception) {

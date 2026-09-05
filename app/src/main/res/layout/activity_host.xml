@@ -3,13 +3,15 @@
     android:id="@+id/rootContainer"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:keepScreenOn="true"
     android:background="#000000">
 
     <!-- TextureView for hardware video decoding / rendering -->
     <TextureView
         android:id="@+id/hostTextureView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:keepScreenOn="true" />
 
     <!-- 1. SETTINGS & CONFIGURATION INTERFACE -->
     <ScrollView

@@ -16,6 +16,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import android.view.WindowManager
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -276,6 +277,11 @@ class HostActivity : AppCompatActivity() {
         binding = ActivityHostBinding.inflate(layoutInflater)
         setContentView(binding.root)
         hideSystemUI()
+
+        // Keep Host display awake during video wall operation and playback
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        binding.root.keepScreenOn = true
+        binding.hostTextureView.keepScreenOn = true
 
         // Unbind process network restrictions so the Host can freely use Cellular Data / Internet
         // for resolving and streaming YouTube videos, while ServerSockets bind to 0.0.0.0 for LAN clients.
@@ -936,6 +942,9 @@ class HostActivity : AppCompatActivity() {
         syncController?.release()
         server?.stop()
         mediaServer?.stop()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        binding.root.keepScreenOn = false
+        binding.hostTextureView.keepScreenOn = false
     }
 }
 
@@ -961,6 +970,9 @@ class ClientActivity : AppCompatActivity() {
         setContentView(binding.root)
         hideSystemUI()
 
+        // Keep connected client display awake until disconnected, app closed, or power button pressed
+        setScreenAwake(true)
+
         NetworkUtils.bindProcessToWifi(this)
         currentHostIp = intent.getStringExtra("HOST_IP") ?: "192.168.43.1"
 
@@ -980,6 +992,20 @@ class ClientActivity : AppCompatActivity() {
 
         setupErrorCardButtons()
         startConnection(currentHostIp)
+    }
+
+    private fun setScreenAwake(awake: Boolean) {
+        runOnUiThread {
+            if (awake) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                binding.root.keepScreenOn = true
+                binding.clientTextureView.keepScreenOn = true
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                binding.root.keepScreenOn = false
+                binding.clientTextureView.keepScreenOn = false
+            }
+        }
     }
 
     private fun setupErrorCardButtons() {
@@ -1014,17 +1040,28 @@ class ClientActivity : AppCompatActivity() {
                 runOnUiThread {
                     currentHostIp = connectedHost
                     binding.cardConnectionError.visibility = View.GONE
+                    setScreenAwake(true)
                     Toast.makeText(this@ClientActivity, "✅ Successfully connected to Host at $connectedHost!", Toast.LENGTH_LONG).show()
                 }
             },
             onConnectionFailed = { errorMsg, attemptedIp ->
                 runOnUiThread {
+                    setScreenAwake(false)
                     binding.cardConnectionError.visibility = View.VISIBLE
                     binding.tvErrorMessage.text = "Could not connect to Host ($attemptedIp:8988).\nError: $errorMsg"
                     Toast.makeText(this@ClientActivity, "❌ Connection failed to $attemptedIp:8988", Toast.LENGTH_LONG).show()
                 }
             },
+            onDisconnected = {
+                runOnUiThread {
+                    setScreenAwake(false)
+                    binding.cardConnectionError.visibility = View.VISIBLE
+                    binding.tvErrorMessage.text = "Disconnected from Host. Check Wi-Fi or Host status."
+                    binding.tvScreenIndex.text = "Disconnected from Host"
+                }
+            },
             onRoleAssigned = { role ->
+                setScreenAwake(true)
                 currentRole = role
                 currentDeviceOrientation = role.deviceOrientation
                 if (role.videoWidth > 0 && role.videoHeight > 0) {
@@ -1060,6 +1097,7 @@ class ClientActivity : AppCompatActivity() {
             },
             onPlayScheduled = { startPositionMs, localExecutionTimeMs, orientation, bezel, scaleMode ->
                 runOnUiThread {
+                    setScreenAwake(true)
                     currentDeviceOrientation = orientation
                     // Enforce orientation synchronization across all screens
                     requestedOrientation = if (orientation == DeviceOrientation.VERTICAL) {
@@ -1153,6 +1191,7 @@ class ClientActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        setScreenAwake(false)
         syncController?.release()
         client?.disconnect()
     }

@@ -49,7 +49,33 @@ export const PopoutClientScreen: React.FC<PopoutClientScreenProps> = ({
     // Request state from host
     broadcastBusRef.current.broadcast({ type: 'REQUEST_STATE' });
 
-    return () => broadcastBusRef.current?.close();
+    // Request Screen Wake Lock to keep display awake during video wall operation
+    let wakeLock: any = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch (err) {
+        // Ignored if unsupported
+      }
+    };
+    requestWakeLock();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLock) {
+        wakeLock.release().catch(() => {});
+      }
+      broadcastBusRef.current?.close();
+    };
   }, []);
 
   // Continuous animation loop rendering the test pattern / spliced canvas

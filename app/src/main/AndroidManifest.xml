@@ -42,8 +42,7 @@
         <activity
             android:name=".ui.HostActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
-            android:keepScreenOn="true" />
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />
 
         <!-- Client Screen Activity (Hardware Accelerated TextureView) -->
         <activity
@@ -51,7 +50,6 @@
             android:exported="false"
             android:hardwareAccelerated="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
-            android:keepScreenOn="true"
             android:theme="@style/Theme.VideoWallSplicer.Fullscreen" />
 
     </application>

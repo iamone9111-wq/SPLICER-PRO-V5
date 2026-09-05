@@ -106,6 +106,29 @@ export const VideoWallSimulator: React.FC = () => {
     return () => broadcastBusRef.current?.close();
   }, [isPlaying, currentTime, orientation, totalDevices, selectedVideoId]);
 
+  // Request screen wake lock during active playback session to keep display awake
+  useEffect(() => {
+    let wakeLock: any = null;
+    if (isPlaying) {
+      const requestWakeLock = async () => {
+        try {
+          if ('wakeLock' in navigator) {
+            wakeLock = await (navigator as any).wakeLock.request('screen');
+          }
+        } catch (err) {
+          // Unsupported or denied
+        }
+      };
+      requestWakeLock();
+    }
+
+    return () => {
+      if (wakeLock) {
+        wakeLock.release().catch(() => {});
+      }
+    };
+  }, [isPlaying]);
+
   // Compute effective rows and columns for current mode
   const effectiveRows =
     orientation === 'horizontal'
