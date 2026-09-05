@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.TextureView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
@@ -22,13 +23,14 @@ class SyncPlaybackController(
     private var exoPlayer: ExoPlayer? = null
     private val controllerScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var scheduledPlayJob: Job? = null
+    private var currentUri: Uri? = null
 
     init {
         initExoPlayer()
     }
 
     private fun initExoPlayer() {
-        // Configure low buffer delay for fast seeking and sync response
+        // Configure low buffer delay for fast seeking and tight synchronized response
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 500,  // minBufferMs
@@ -44,7 +46,7 @@ class SyncPlaybackController(
             .apply {
                 setVideoTextureView(textureView)
                 addListener(object : Player.Listener {
-                    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                    override fun onVideoSizeChanged(videoSize: VideoSize) {
                         val rotation = videoSize.unappliedRotationDegrees
                         val realW = if (rotation == 90 || rotation == 270) videoSize.height else videoSize.width
                         val realH = if (rotation == 90 || rotation == 270) videoSize.width else videoSize.height
@@ -53,13 +55,26 @@ class SyncPlaybackController(
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
-                        Log.d(tag, "Playback state changed: $playbackState")
+                        Log.d(tag, "Playback state changed: $playbackState (ready=${playbackState == Player.STATE_READY})")
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        Log.e(tag, "ExoPlayer error: ${error.message} (code: ${error.errorCodeName})", error)
+                        // Auto-retry once on network or transient error
+                        currentUri?.let { uri ->
+                            controllerScope.launch {
+                                delay(600L)
+                                Log.d(tag, "Retrying media preparation after error: $uri")
+                                prepareMedia(uri)
+                            }
+                        }
                     }
                 })
             }
     }
 
     fun prepareMedia(uri: Uri) {
+        currentUri = uri
         val mediaItem = MediaItem.fromUri(uri)
         exoPlayer?.apply {
             setMediaItem(mediaItem)
@@ -79,6 +94,11 @@ class SyncPlaybackController(
         scheduledPlayJob = controllerScope.launch {
             val now = SystemClock.elapsedRealtime()
             val waitDurationMs = localExecutionTimeMs - now
+
+            // If player is idle or unbuffered, prepare it
+            if (exoPlayer?.playbackState == Player.STATE_IDLE) {
+                currentUri?.let { prepareMedia(it) } ?: exoPlayer?.prepare()
+            }
 
             // Avoid redundant seeks which flush ExoPlayer decoder buffers and cause 1-2s lag
             val curPos = exoPlayer?.currentPosition ?: 0L
@@ -167,7 +187,7 @@ class SyncPlaybackController(
     }
 
     val currentPositionMs: Long
-        get() = exoPlayer?.currentPosition ?: 0L
+        get() = exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
 
     val durationMs: Long
         get() = exoPlayer?.duration?.takeIf { it > 0 } ?: 0L

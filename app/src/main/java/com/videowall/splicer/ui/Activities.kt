@@ -203,6 +203,30 @@ class HostActivity : AppCompatActivity() {
             mediaServer?.setMediaUri(it)
             extractAndApplyVideoMetadata(it)
             syncController?.prepareMedia(it)
+            broadcastConfiguration()
+            cacheVideoForStreaming(it)
+        }
+    }
+
+    private fun cacheVideoForStreaming(uri: Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val cacheFile = File(cacheDir, "stream_source.mp4")
+                val inStream = contentResolver.openInputStream(uri) ?: return@launch
+                val outStream = FileOutputStream(cacheFile)
+                val buf = ByteArray(256 * 1024)
+                var read: Int
+                while (inStream.read(buf).also { read = it } != -1) {
+                    outStream.write(buf, 0, read)
+                }
+                outStream.flush()
+                outStream.close()
+                inStream.close()
+                Log.d("HostActivity", "Video cached successfully: ${cacheFile.length()} bytes")
+                mediaServer?.setMediaFile(cacheFile)
+            } catch (e: Exception) {
+                Log.w("HostActivity", "Caching error (direct channel active): ${e.message}")
+            }
         }
     }
 
@@ -431,6 +455,15 @@ class HostActivity : AppCompatActivity() {
 
         binding.btnPlayImmersion.setOnClickListener {
             startImmersionPlayback()
+        }
+
+        binding.btnFlashScreens.setOnClickListener {
+            flashScreens()
+        }
+
+        binding.btnImmersionFlash.setOnClickListener {
+            flashScreens()
+            scheduleControlsDissolve(2000L)
         }
 
         binding.btnPauseImmersion.setOnClickListener {
@@ -665,6 +698,20 @@ class HostActivity : AppCompatActivity() {
         }
     }
 
+    private val hideHostIdentifyRunnable = Runnable {
+        binding.hostIdentifyOverlay.visibility = View.GONE
+    }
+
+    private fun flashScreens() {
+        // Flash Screen #1 on Host
+        binding.hostIdentifyOverlay.visibility = View.VISIBLE
+        binding.hostIdentifyOverlay.removeCallbacks(hideHostIdentifyRunnable)
+        binding.hostIdentifyOverlay.postDelayed(hideHostIdentifyRunnable, 3000L)
+
+        // Broadcast to all other screens according to their screen number
+        server?.broadcastIdentify(durationMs = 3000L)
+    }
+
     private fun startImmersionPlayback() {
         if (selectedVideoUri == null) {
             val msg = if (activeVideoSource == "youtube") {
@@ -687,9 +734,12 @@ class HostActivity : AppCompatActivity() {
         showImmersionControls()
         hideSystemUI()
 
-        // Resume from current position instead of resetting to 0, with fast 150ms execution epoch
+        // Ensure latest geometry and media preparation reach all screens before scheduling play
+        broadcastConfiguration()
+
+        // Resume from current position instead of resetting to 0, with fast 200ms execution epoch
         val resumePos = syncController?.currentPositionMs ?: 0L
-        val executionEpoch = SystemClock.elapsedRealtime() + 150L
+        val executionEpoch = SystemClock.elapsedRealtime() + 200L
         syncController?.schedulePlay(resumePos, executionEpoch)
         server?.broadcastPlay(resumePos, executionEpoch, deviceOrientation, bezelPercent, scaleMode)
         updatePlayPauseButtonStates(true)
@@ -899,6 +949,9 @@ class ClientActivity : AppCompatActivity() {
     private var currentRole: SyncMessage.AssignRole? = null
     private var currentHostIp: String = "192.168.43.1"
     private var currentDeviceOrientation: DeviceOrientation = DeviceOrientation.HORIZONTAL
+    private val hideClientIdentifyRunnable = Runnable {
+        binding.identifyOverlay.visibility = View.GONE
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -994,7 +1047,13 @@ class ClientActivity : AppCompatActivity() {
             },
             onMediaPrepared = { media ->
                 runOnUiThread {
-                    syncController?.prepareMedia(Uri.parse(media.mediaUri))
+                    val fixedUri = if (media.mediaUri.contains(":8990/")) {
+                        "http://$currentHostIp:8990/video.mp4"
+                    } else {
+                        media.mediaUri
+                    }
+                    Log.d("ClientActivity", "Preparing media stream: $fixedUri")
+                    syncController?.prepareMedia(Uri.parse(fixedUri))
                 }
             },
             onPlayScheduled = { startPositionMs, localExecutionTimeMs, orientation, bezel, scaleMode ->
@@ -1011,6 +1070,11 @@ class ClientActivity : AppCompatActivity() {
                         deviceOrientation = orientation,
                         bezelPercent = bezel
                     )
+                    // If media stream was not prepared yet or duration is 0, prepare immediately
+                    if (syncController?.durationMs == 0L) {
+                        val fallbackStream = "http://$currentHostIp:8990/video.mp4"
+                        syncController?.prepareMedia(Uri.parse(fallbackStream))
+                    }
                     syncController?.schedulePlay(startPositionMs, localExecutionTimeMs)
                     binding.layoutClientStatus.visibility = View.GONE
                     binding.clientTextureView.post {
@@ -1036,9 +1100,8 @@ class ClientActivity : AppCompatActivity() {
                 runOnUiThread {
                     binding.tvIdentifyBigNumber.text = displayIndex.toString()
                     binding.identifyOverlay.visibility = View.VISIBLE
-                    binding.identifyOverlay.postDelayed({
-                        binding.identifyOverlay.visibility = View.GONE
-                    }, durationMs)
+                    binding.identifyOverlay.removeCallbacks(hideClientIdentifyRunnable)
+                    binding.identifyOverlay.postDelayed(hideClientIdentifyRunnable, durationMs)
                 }
             }
         ).apply { connect() }

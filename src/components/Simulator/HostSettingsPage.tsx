@@ -255,7 +255,7 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
                 showOverlayStats={false}
                 preserveAspectRatio={preserveAspectRatio}
                 bezelCompensationPercent={bezelCompensation}
-                isIdentifying={false}
+                isIdentifying={isIdentifying}
                 isImmersionMode={true}
               />
             ))}
@@ -350,6 +350,20 @@ export const HostSettingsPage: React.FC<HostSettingsPageProps> = ({
           </div>
 
           <div className="h-4 w-px bg-white/20" />
+
+          {/* Flash Screen button in Immersion HUD */}
+          <button
+            onClick={onTriggerIdentify}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors shrink-0 ${
+              isIdentifying
+                ? 'bg-indigo-600 text-white border-indigo-400'
+                : 'bg-white/10 hover:bg-white/20 text-slate-300 border-white/10'
+            }`}
+            title="Flash identification numbers on all screens"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Flash</span>
+          </button>
 
           <button
             onClick={handleExitImmersion}

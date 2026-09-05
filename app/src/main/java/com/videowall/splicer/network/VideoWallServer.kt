@@ -1,7 +1,9 @@
 package com.videowall.splicer.network
 
+import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import com.google.gson.Gson
 import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -11,20 +13,19 @@ import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
-data class ScreenSlot(
-    val deviceIndex: Int,
-    val row: Int,
-    val col: Int,
-    val rotationDeg: Int = 0
-)
-
+/**
+ * High-performance TCP master server running on the Host device.
+ * Manages WebSocket/TCP connections to client phones, synchronizes system clocks via NTP-like ping-pong,
+ * assigns screen slots (rows, columns, orientation, bezel compensation), and broadcasts lockstep playback commands.
+ */
 class VideoWallServer(
+    private val context: Context,
     private val port: Int = 8988,
     private val onClientConnected: (clientCount: Int, clientIp: String) -> Unit,
-    private val onClientDisconnected: (clientCount: Int) -> Unit,
-    private val onHeartbeatReceived: (heartbeat: SyncMessage.Heartbeat) -> Unit
+    private val onClientDisconnected: (clientCount: Int) -> Unit
 ) {
     private val tag = "VideoWallServer"
+    private val gson = Gson()
     private var serverSocket: ServerSocket? = null
     private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val connectedClients = CopyOnWriteArrayList<ClientHandler>()
@@ -54,27 +55,31 @@ class VideoWallServer(
         private set
 
     init {
-        // Default 1x3 horizontal wall
         rebuildDefaultSlots(configuredScreenCount, currentOrientation, gridRows, gridCols)
     }
 
     fun start() {
         serverScope.launch {
             try {
-                serverSocket = ServerSocket(port)
-                Log.d(tag, "Server listening on port $port")
+                serverSocket = ServerSocket(port).apply {
+                    reuseAddress = true
+                }
+                Log.d(tag, "VideoWallServer listening on port $port")
 
                 while (isActive) {
                     val socket = serverSocket?.accept() ?: break
                     val clientHandler = ClientHandler(socket)
                     connectedClients.add(clientHandler)
 
+                    val clientIp = socket.inetAddress?.hostAddress ?: "unknown"
+                    Log.d(tag, "New client connected: $clientIp (total: ${connectedClients.size})")
+
                     withContext(Dispatchers.Main) {
-                        onClientConnected(connectedClients.size, socket.inetAddress.hostAddress ?: "unknown")
+                        onClientConnected(connectedClients.size, clientIp)
                     }
 
-                    // Auto-sync roles when new device joins
-                    broadcastRoleAssignments()
+                    // Auto-sync roles and media to newly joined device immediately
+                    broadcastRoleAssignments(forceResendMedia = true)
 
                     clientHandler.startListening()
                 }
@@ -85,7 +90,7 @@ class VideoWallServer(
     }
 
     /**
-     * Updates wall geometry and broadcasts to all clients.
+     * Updates wall geometry and broadcasts configuration and media to all clients.
      */
     fun broadcastConfiguration(
         rows: Int,
@@ -97,19 +102,25 @@ class VideoWallServer(
         deviceOrientation: DeviceOrientation = this.deviceOrientation,
         bezelPercent: Float = this.bezelPercent
     ) {
-        val mediaChanged = mediaUri != null && mediaUri != currentMediaUri
-        gridRows = rows
-        gridCols = cols
-        configuredScreenCount = rows * cols
+        gridRows = rows.coerceAtLeast(1)
+        gridCols = cols.coerceAtLeast(1)
+        configuredScreenCount = gridRows * gridCols
         currentScaleMode = scaleMode
         if (mediaUri != null) currentMediaUri = mediaUri
         this.videoWidth = videoWidth
         this.videoHeight = videoHeight
         this.deviceOrientation = deviceOrientation
         this.bezelPercent = bezelPercent
+        currentOrientation = if (gridRows > 1 && gridCols > 1) {
+            WallOrientation.GRID
+        } else if (gridRows > 1) {
+            WallOrientation.VERTICAL
+        } else {
+            WallOrientation.HORIZONTAL
+        }
 
-        rebuildDefaultSlots(configuredScreenCount, currentOrientation, rows, cols)
-        broadcastRoleAssignments(forceResendMedia = mediaChanged)
+        rebuildDefaultSlots(configuredScreenCount, currentOrientation, gridRows, gridCols)
+        broadcastRoleAssignments(forceResendMedia = true)
     }
 
     fun configureWall(
@@ -123,46 +134,51 @@ class VideoWallServer(
         height: Int = videoHeight,
         deviceOrientation: DeviceOrientation = this.deviceOrientation
     ) {
-        val mediaChanged = mediaUri != null && mediaUri != currentMediaUri
-        configuredScreenCount = screenCount
+        configuredScreenCount = screenCount.coerceAtLeast(1)
         currentOrientation = orientation
-        gridRows = rows
-        gridCols = cols
+        gridRows = rows.coerceAtLeast(1)
+        gridCols = cols.coerceAtLeast(1)
         currentScaleMode = scaleMode
         if (mediaUri != null) currentMediaUri = mediaUri
         videoWidth = width
         videoHeight = height
         this.deviceOrientation = deviceOrientation
 
-        rebuildDefaultSlots(screenCount, orientation, rows, cols)
-        broadcastRoleAssignments(forceResendMedia = mediaChanged)
+        rebuildDefaultSlots(configuredScreenCount, orientation, gridRows, gridCols)
+        broadcastRoleAssignments(forceResendMedia = true)
     }
 
     /**
-     * Broadcasts identification numbers across all connected screens.
+     * Broadcasts identification screen numbers to all connected screens.
+     * Host is Screen 1, Client 0 is Screen 2, Client 1 is Screen 3, etc.
      */
     fun broadcastIdentify(targetDeviceIndex: Int = -1, durationMs: Long = 3000L) {
         connectedClients.forEachIndexed { index, client ->
-            val devIdx = index + 1
+            val devIdx = index + 1 // 1..N
+            val displayIndex = devIdx + 1 // Screen 2, 3, 4...
             if (targetDeviceIndex == -1 || targetDeviceIndex == devIdx) {
-                client.sendMessage(SyncMessage.Identify(targetDeviceIndex = devIdx, displayIndex = devIdx + 1, durationMs = durationMs))
+                client.sendMessage(
+                    SyncMessage.Identify(
+                        targetDeviceIndex = devIdx,
+                        displayIndex = displayIndex,
+                        durationMs = durationMs
+                    )
+                )
             }
         }
     }
 
     private fun rebuildDefaultSlots(total: Int, orient: WallOrientation, rows: Int = gridRows, cols: Int = gridCols) {
         slotAssignments.clear()
+        val c = cols.coerceAtLeast(1)
         for (i in 0 until total) {
-            val (row, col) = when (orient) {
-                WallOrientation.HORIZONTAL -> Pair(0, i)
-                WallOrientation.VERTICAL -> Pair(i, 0)
-                WallOrientation.GRID -> Pair(i / cols.coerceAtLeast(1), i % cols.coerceAtLeast(1))
-            }
+            val row = i / c
+            val col = i % c
             slotAssignments[i] = ScreenSlot(deviceIndex = i, row = row, col = col)
         }
     }
 
-    fun broadcastRoleAssignments(forceResendMedia: Boolean = false) {
+    fun broadcastRoleAssignments(forceResendMedia: Boolean = true) {
         val totalScreens = maxOf(configuredScreenCount, connectedClients.size + 1)
         rebuildDefaultSlots(totalScreens, currentOrientation, gridRows, gridCols)
 
@@ -192,17 +208,22 @@ class VideoWallServer(
                 )
             )
 
-            if (forceResendMedia) {
-                currentMediaUri?.let { uri ->
-                    client.sendMessage(
-                        SyncMessage.PrepareMedia(
-                            mediaUri = uri,
-                            videoWidth = videoWidth,
-                            videoHeight = videoHeight,
-                            durationMs = 0L
-                        )
-                    )
+            // ALWAYS send media preparation if media is configured
+            if (forceResendMedia && currentMediaUri != null) {
+                val clientLocalIp = client.socket.localAddress?.hostAddress ?: ""
+                val streamUri = if (clientLocalIp.isNotEmpty() && currentMediaUri!!.contains(":8990/")) {
+                    "http://$clientLocalIp:8990/video.mp4"
+                } else {
+                    currentMediaUri!!
                 }
+                client.sendMessage(
+                    SyncMessage.PrepareMedia(
+                        mediaUri = streamUri,
+                        videoWidth = videoWidth,
+                        videoHeight = videoHeight,
+                        durationMs = 0L
+                    )
+                )
             }
         }
     }
@@ -214,6 +235,26 @@ class VideoWallServer(
         bezelPercent: Float = this.bezelPercent,
         scaleMode: ScaleMode = this.currentScaleMode
     ) {
+        // Ensure every client has media prepared before scheduling play
+        currentMediaUri?.let { uri ->
+            connectedClients.forEach { client ->
+                val clientLocalIp = client.socket.localAddress?.hostAddress ?: ""
+                val streamUri = if (clientLocalIp.isNotEmpty() && uri.contains(":8990/")) {
+                    "http://$clientLocalIp:8990/video.mp4"
+                } else {
+                    uri
+                }
+                client.sendMessage(
+                    SyncMessage.PrepareMedia(
+                        mediaUri = streamUri,
+                        videoWidth = videoWidth,
+                        videoHeight = videoHeight,
+                        durationMs = 0L
+                    )
+                )
+            }
+        }
+
         val message = SyncMessage.SchedulePlay(
             startPositionMs = startPositionMs,
             targetSystemTimeMs = targetTimeEpochMs,
@@ -233,17 +274,7 @@ class VideoWallServer(
         scaleMode: ScaleMode = this.currentScaleMode
     ): Long {
         val targetSystemTimeMs = SystemClock.elapsedRealtime() + executionDelayMs
-        val message = SyncMessage.SchedulePlay(
-            startPositionMs = startPositionMs,
-            targetSystemTimeMs = targetSystemTimeMs,
-            hostExecutionEpochMs = targetSystemTimeMs,
-            deviceOrientation = deviceOrientation,
-            bezelPercent = bezelPercent,
-            scaleMode = scaleMode
-        )
-        connectedClients.forEach { client ->
-            client.sendMessage(message)
-        }
+        broadcastPlay(startPositionMs, targetSystemTimeMs, deviceOrientation, bezelPercent, scaleMode)
         return targetSystemTimeMs
     }
 
@@ -268,81 +299,82 @@ class VideoWallServer(
         connectedClients.clear()
         try {
             serverSocket?.close()
-        } catch (e: Exception) {
-            Log.e(tag, "Error closing server socket: ${e.message}")
-        }
+        } catch (e: Exception) {}
     }
 
-    private inner class ClientHandler(private val socket: Socket) {
-        private val writer: PrintWriter = PrintWriter(socket.getOutputStream(), true)
-        private val reader: BufferedReader = BufferedReader(InputStreamReader(socket.getInputStream()))
+    inner class ClientHandler(val socket: Socket) {
+        private var writer: PrintWriter? = null
+        private var reader: BufferedReader? = null
+        private var clientJob: Job? = null
 
         fun startListening() {
-            serverScope.launch {
+            clientJob = serverScope.launch {
                 try {
-                    while (isActive && !socket.isClosed) {
-                        val line = reader.readLine() ?: break
-                        handleIncomingMessage(line)
+                    socket.tcpNoDelay = true
+                    writer = PrintWriter(socket.getOutputStream(), true)
+                    reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+
+                    // Immediate initial NTP clock sync handshake
+                    sendPing()
+
+                    var line: String?
+                    while (isActive && reader?.readLine().also { line = it } != null) {
+                        line?.let { handleMessage(it) }
                     }
                 } catch (e: Exception) {
-                    Log.w(tag, "Client connection lost: ${e.message}")
+                    Log.d(tag, "Client connection ended: ${e.message}")
                 } finally {
                     close()
                     connectedClients.remove(this@ClientHandler)
                     withContext(Dispatchers.Main) {
                         onClientDisconnected(connectedClients.size)
                     }
-                    broadcastRoleAssignments()
+                    broadcastRoleAssignments(forceResendMedia = false)
                 }
             }
         }
 
-        private fun handleIncomingMessage(rawJson: String) {
+        private fun sendPing() {
+            val ping = SyncMessage.Ping(clientSendTimeMs = 0L, serverReceiveTimeMs = SystemClock.elapsedRealtime())
+            sendMessage(ping)
+        }
+
+        private fun handleMessage(json: String) {
             try {
-                when (val message = ProtocolSerializer.deserialize(rawJson)) {
-                    is SyncMessage.Ping -> {
-                        val t1ServerReceived = SystemClock.elapsedRealtime()
-                        val t2ServerSent = SystemClock.elapsedRealtime()
-                        
+                when {
+                    json.contains("\"type\":\"PING\"") -> {
+                        val ping = gson.fromJson(json, SyncMessage.Ping::class.java)
                         val pong = SyncMessage.Pong(
-                            t0ClientSent = message.t0ClientSent,
-                            t1ServerReceived = t1ServerReceived,
-                            t2ServerSent = t2ServerSent
+                            clientSendTimeMs = ping.clientSendTimeMs,
+                            serverReceiveTimeMs = SystemClock.elapsedRealtime(),
+                            serverTransmitTimeMs = SystemClock.elapsedRealtime()
                         )
                         sendMessage(pong)
                     }
-                    is SyncMessage.Heartbeat -> {
-                        onHeartbeatReceived(message)
-                    }
-                    else -> {
-                        Log.d(tag, "Received message from client: $rawJson")
-                    }
                 }
             } catch (e: Exception) {
-                Log.e(tag, "Error parsing client message: ${e.message}")
+                Log.e(tag, "Error handling message from client: ${e.message}")
             }
         }
 
         fun sendMessage(message: SyncMessage) {
-            serverScope.launch {
+            serverScope.launch(Dispatchers.IO) {
                 try {
-                    val json = ProtocolSerializer.serialize(message)
-                    writer.print(json)
-                    writer.flush()
+                    val json = gson.toJson(message)
+                    writer?.println(json)
                 } catch (e: Exception) {
-                    Log.e(tag, "Failed to send message to client: ${e.message}")
+                    Log.e(tag, "Failed to send message: ${e.message}")
                 }
             }
         }
 
         fun close() {
+            clientJob?.cancel()
             try {
+                writer?.close()
+                reader?.close()
                 socket.close()
-                writer.close()
-                reader.close()
-            } catch (e: Exception) {
-                // Ignore
-            }
+            } catch (e: Exception) {}
         }
     }
 }

@@ -2,6 +2,7 @@ package com.videowall.splicer.network
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import kotlinx.coroutines.*
 import java.io.*
@@ -12,8 +13,9 @@ import java.net.URL
 import java.util.StringTokenizer
 
 /**
- * Embedded HTTP server running on the Host device to stream local video files (content:// or file://)
- * directly to ExoPlayer instances on connected client phones over Wi-Fi with HTTP 206 Range support.
+ * High-performance, low-latency embedded HTTP server running on the Host device.
+ * Streams local video files (content://, file://, or cached File) directly to ExoPlayer instances
+ * on connected client phones over Wi-Fi with full HTTP 206 Partial Content (Byte-Range) support.
  */
 class LocalMediaHttpServer(
     private val context: Context,
@@ -23,16 +25,24 @@ class LocalMediaHttpServer(
     private var serverSocket: ServerSocket? = null
     private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var currentUri: Uri? = null
+    private var currentFile: File? = null
 
     fun setMediaUri(uri: Uri?) {
         this.currentUri = uri
         Log.d(tag, "Media URI registered for streaming: $uri")
     }
 
+    fun setMediaFile(file: File?) {
+        this.currentFile = file
+        Log.d(tag, "Media cached file registered for streaming: ${file?.absolutePath} (${file?.length()} bytes)")
+    }
+
     fun start() {
         serverScope.launch {
             try {
-                serverSocket = ServerSocket(port)
+                serverSocket = ServerSocket(port).apply {
+                    reuseAddress = true
+                }
                 Log.d(tag, "LocalMediaHttpServer listening on port $port")
 
                 while (isActive) {
@@ -48,7 +58,12 @@ class LocalMediaHttpServer(
     }
 
     private fun handleClient(socket: Socket) {
+        var pfd: android.os.ParcelFileDescriptor? = null
+        var raf: RandomAccessFile? = null
         try {
+            socket.tcpNoDelay = true
+            socket.soTimeout = 15000
+
             val input = BufferedReader(InputStreamReader(socket.getInputStream()))
             val output = BufferedOutputStream(socket.getOutputStream())
 
@@ -56,7 +71,7 @@ class LocalMediaHttpServer(
             val tokenizer = StringTokenizer(requestLine)
             if (!tokenizer.hasMoreTokens()) return
             val method = tokenizer.nextToken()
-            if (tokenizer.hasMoreTokens()) tokenizer.nextToken() // URL path
+            val requestPath = if (tokenizer.hasMoreTokens()) tokenizer.nextToken() else "/"
 
             var rangeHeader: String? = null
             var line: String?
@@ -67,42 +82,61 @@ class LocalMediaHttpServer(
                 }
             }
 
+            Log.d(tag, "Request: $method $requestPath, Range: $rangeHeader")
+
+            // If a cached physical file is available, prioritize RandomAccessFile streaming
+            val file = currentFile
+            if (file != null && file.exists() && file.length() > 0) {
+                streamFromFile(file, rangeHeader, method, output)
+                return
+            }
+
             val uri = currentUri
             if (uri == null) {
-                val notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+                val notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 output.write(notFound.toByteArray())
                 output.flush()
                 return
             }
 
-            // If the URI is a remote HTTP or HTTPS stream (such as a YouTube stream or web video),
-            // proxy the byte-range request seamlessly so all client phones can play it over local Wi-Fi.
+            // If the URI is a remote HTTP or HTTPS stream (e.g. YouTube resolved URL), proxy it
             val scheme = uri.scheme?.lowercase()
             if (scheme == "http" || scheme == "https") {
                 proxyRemoteStream(uri.toString(), rangeHeader, method, output)
                 return
             }
 
-            val afd = try {
-                context.contentResolver.openAssetFileDescriptor(uri, "r")
+            // Determine MIME type
+            val mimeType = try {
+                context.contentResolver.getType(uri) ?: "video/mp4"
             } catch (e: Exception) {
+                "video/mp4"
+            }
+
+            // Open ParcelFileDescriptor for direct channel seeking
+            pfd = try {
+                context.contentResolver.openFileDescriptor(uri, "r")
+            } catch (e: Exception) {
+                Log.e(tag, "Error opening PFD for $uri: ${e.message}")
                 null
             }
 
-            val totalLength: Long = afd?.length ?: try {
-                val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-                val size = pfd?.statSize ?: 0L
-                pfd?.close()
-                size
-            } catch (e: Exception) {
-                0L
+            if (pfd == null) {
+                val notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                output.write(notFound.toByteArray())
+                output.flush()
+                return
             }
 
+            val fis = FileInputStream(pfd.fileDescriptor)
+            val channel = fis.channel
+            val totalLength = channel.size().coerceAtLeast(1L)
+
             var startByte = 0L
-            var endByte = if (totalLength > 0) totalLength - 1 else 0L
+            var endByte = totalLength - 1
 
             if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
-                val rangeVal = rangeHeader.substring(6)
+                val rangeVal = rangeHeader.substring(6).trim()
                 val parts = rangeVal.split("-")
                 try {
                     if (parts[0].isNotEmpty()) {
@@ -116,26 +150,30 @@ class LocalMediaHttpServer(
                 }
             }
 
-            if (totalLength > 0 && endByte >= totalLength) {
+            if (startByte >= totalLength) {
+                val invalidRange = "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */$totalLength\r\n\r\n"
+                output.write(invalidRange.toByteArray())
+                output.flush()
+                return
+            }
+
+            if (endByte >= totalLength) {
                 endByte = totalLength - 1
             }
 
-            val contentLength = if (totalLength > 0) (endByte - startByte + 1) else 0L
-            val isPartial = rangeHeader != null && totalLength > 0
+            val contentLength = (endByte - startByte + 1).coerceAtLeast(0L)
+            val isPartial = rangeHeader != null
 
             val statusLine = if (isPartial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n"
             val headers = StringBuilder().apply {
                 append(statusLine)
-                append("Content-Type: video/mp4\r\n")
+                append("Content-Type: $mimeType\r\n")
                 append("Accept-Ranges: bytes\r\n")
-                if (totalLength > 0) {
-                    append("Content-Length: $contentLength\r\n")
-                    if (isPartial) {
-                        append("Content-Range: bytes $startByte-$endByte/$totalLength\r\n")
-                    }
+                append("Content-Length: $contentLength\r\n")
+                if (isPartial) {
+                    append("Content-Range: bytes $startByte-$endByte/$totalLength\r\n")
                 }
-                append("Connection: close\r\n")
-                append("\r\n")
+                append("Connection: close\r\n\r\n")
             }.toString()
 
             output.write(headers.toByteArray())
@@ -145,49 +183,115 @@ class LocalMediaHttpServer(
                 return
             }
 
-            // Stream file data efficiently
-            val inputStream = context.contentResolver.openInputStream(uri)
-            if (inputStream != null) {
-                inputStream.use { stream ->
-                    if (startByte > 0) {
-                        var skipped = 0L
-                        while (skipped < startByte) {
-                            val s = stream.skip(startByte - skipped)
-                            if (s <= 0) break
-                            skipped += s
-                        }
-                    }
+            // Seek directly to start byte with hardware channel
+            channel.position(startByte)
+            val buffer = ByteArray(64 * 1024)
+            var bytesRemaining = contentLength
 
-                    val buffer = ByteArray(64 * 1024)
-                    var bytesRemaining = contentLength
-                    while (bytesRemaining > 0 || totalLength <= 0) {
-                        val toRead = if (totalLength > 0) minOf(buffer.size.toLong(), bytesRemaining).toInt() else buffer.size
-                        val bytesRead = stream.read(buffer, 0, toRead)
-                        if (bytesRead <= 0) break
-                        output.write(buffer, 0, bytesRead)
-                        if (totalLength > 0) {
-                            bytesRemaining -= bytesRead
-                        }
-                    }
-                    output.flush()
-                }
+            while (bytesRemaining > 0) {
+                val toRead = minOf(buffer.size.toLong(), bytesRemaining).toInt()
+                val bytesRead = fis.read(buffer, 0, toRead)
+                if (bytesRead <= 0) break
+                output.write(buffer, 0, bytesRead)
+                bytesRemaining -= bytesRead
             }
-            afd?.close()
+            output.flush()
         } catch (e: Exception) {
-            // Connection closed or client disconnected
+            // Client disconnected or seek completed
         } finally {
             try {
+                raf?.close()
+            } catch (e: Exception) {}
+            try {
+                pfd?.close()
+            } catch (e: Exception) {}
+            try {
                 socket.close()
-            } catch (e: Exception) {
-                // Ignore
+            } catch (e: Exception) {}
+        }
+    }
+
+    private fun streamFromFile(
+        file: File,
+        rangeHeader: String?,
+        method: String,
+        output: OutputStream
+    ) {
+        var raf: RandomAccessFile? = null
+        try {
+            raf = RandomAccessFile(file, "r")
+            val totalLength = file.length().coerceAtLeast(1L)
+
+            var startByte = 0L
+            var endByte = totalLength - 1
+
+            if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+                val rangeVal = rangeHeader.substring(6).trim()
+                val parts = rangeVal.split("-")
+                try {
+                    if (parts[0].isNotEmpty()) {
+                        startByte = parts[0].toLong()
+                    }
+                    if (parts.size > 1 && parts[1].isNotEmpty()) {
+                        endByte = parts[1].toLong()
+                    }
+                } catch (e: Exception) {}
             }
+
+            if (startByte >= totalLength) {
+                val invalidRange = "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */$totalLength\r\n\r\n"
+                output.write(invalidRange.toByteArray())
+                output.flush()
+                return
+            }
+
+            if (endByte >= totalLength) {
+                endByte = totalLength - 1
+            }
+
+            val contentLength = (endByte - startByte + 1).coerceAtLeast(0L)
+            val isPartial = rangeHeader != null
+
+            val statusLine = if (isPartial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n"
+            val headers = StringBuilder().apply {
+                append(statusLine)
+                append("Content-Type: video/mp4\r\n")
+                append("Accept-Ranges: bytes\r\n")
+                append("Content-Length: $contentLength\r\n")
+                if (isPartial) {
+                    append("Content-Range: bytes $startByte-$endByte/$totalLength\r\n")
+                }
+                append("Connection: close\r\n\r\n")
+            }.toString()
+
+            output.write(headers.toByteArray())
+            output.flush()
+
+            if (method.equals("HEAD", ignoreCase = true)) return
+
+            raf.seek(startByte)
+            val buffer = ByteArray(64 * 1024)
+            var bytesRemaining = contentLength
+            while (bytesRemaining > 0) {
+                val toRead = minOf(buffer.size.toLong(), bytesRemaining).toInt()
+                val bytesRead = raf.read(buffer, 0, toRead)
+                if (bytesRead <= 0) break
+                output.write(buffer, 0, bytesRead)
+                bytesRemaining -= bytesRead
+            }
+            output.flush()
+        } catch (e: Exception) {
+            // Client closed connection
+        } finally {
+            try {
+                raf?.close()
+            } catch (e: Exception) {}
         }
     }
 
     /**
      * Proxies remote HTTP/HTTPS video streams (e.g. YouTube stream URLs) to client sockets
-     * with transparent Byte-Range passing. This allows the Host phone's cellular connection
-     * to download the YouTube chunks and feed all client phones over the local hotspot LAN.
+     * with transparent Byte-Range passing.
      */
     private fun proxyRemoteStream(
         remoteUrl: String,
@@ -276,8 +380,6 @@ class LocalMediaHttpServer(
         serverScope.cancel()
         try {
             serverSocket?.close()
-        } catch (e: Exception) {
-            // Ignore
-        }
+        } catch (e: Exception) {}
     }
 }
