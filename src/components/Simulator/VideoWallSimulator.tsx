@@ -459,10 +459,10 @@ export const VideoWallSimulator: React.FC = () => {
     return () => cancelAnimationFrame(frameId);
   }, [isPlaying, currentTime, effectiveRows, effectiveCols, aspectRatioMode, scaleMode]);
 
-  // Video playback time progression
+  // Video playback time progression for calibration test reel
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isPlaying) {
+    if (isPlaying && selectedVideoId === 'test-pattern') {
       interval = setInterval(() => {
         setCurrentTime((prev) => {
           if (prev >= duration) {
@@ -473,31 +473,21 @@ export const VideoWallSimulator: React.FC = () => {
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, duration]);
+  }, [isPlaying, duration, selectedVideoId]);
 
-  // Play / Pause with simulated NTP Scheduled Dispatch (500ms delay buffer)
+  // Real-time zero-latency Play / Pause
   const handleTogglePlay = () => {
     if (!isPlaying) {
-      setScheduledCountdown(500);
-      const countdownInterval = setInterval(() => {
-        setScheduledCountdown((prev) => {
-          if (prev && prev > 100) return prev - 100;
-          clearInterval(countdownInterval);
-          return null;
-        });
-      }, 100);
-
-      setTimeout(() => {
-        setIsPlaying(true);
-        if (videoRef.current && selectedVideoId !== 'test-pattern') {
-          videoRef.current.play().catch(() => {});
-        }
-        broadcastBusRef.current?.broadcast({
-          type: 'SCHEDULED_PLAY',
-          startPositionMs: currentTime * 1000,
-          targetSystemTimeMs: Date.now() + 500
-        });
-      }, 500);
+      setIsPlaying(true);
+      setScheduledCountdown(null);
+      if (videoRef.current && selectedVideoId !== 'test-pattern') {
+        videoRef.current.play().catch(() => {});
+      }
+      broadcastBusRef.current?.broadcast({
+        type: 'SCHEDULED_PLAY',
+        startPositionMs: currentTime * 1000,
+        targetSystemTimeMs: Date.now()
+      });
     } else {
       setIsPlaying(false);
       setScheduledCountdown(null);
@@ -604,10 +594,16 @@ export const VideoWallSimulator: React.FC = () => {
         playsInline
         muted
         loop
+        preload="auto"
         className="hidden"
         onLoadedMetadata={() => {
           if (videoRef.current) {
             setDuration(videoRef.current.duration || 60);
+          }
+        }}
+        onTimeUpdate={() => {
+          if (videoRef.current && selectedVideoId !== 'test-pattern') {
+            setCurrentTime(videoRef.current.currentTime);
           }
         }}
       />

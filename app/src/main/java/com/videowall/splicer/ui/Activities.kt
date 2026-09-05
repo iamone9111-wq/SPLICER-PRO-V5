@@ -682,7 +682,7 @@ class HostActivity : AppCompatActivity() {
             updatePlayPauseButtonStates(false)
         } else {
             val resumePos = syncController?.currentPositionMs ?: 0L
-            val execTime = SystemClock.elapsedRealtime() + 150L
+            val execTime = SystemClock.elapsedRealtime() + 30L
             syncController?.schedulePlay(resumePos, execTime)
             server?.broadcastPlay(resumePos, execTime, deviceOrientation, bezelPercent, scaleMode)
             updatePlayPauseButtonStates(true)
@@ -740,9 +740,9 @@ class HostActivity : AppCompatActivity() {
         // Ensure latest geometry and media preparation reach all screens before scheduling play
         broadcastConfiguration()
 
-        // Resume from current position instead of resetting to 0, with fast 200ms execution epoch
+        // Resume from current position in real-time with ultra-low 30ms execution epoch
         val resumePos = syncController?.currentPositionMs ?: 0L
-        val executionEpoch = SystemClock.elapsedRealtime() + 200L
+        val executionEpoch = SystemClock.elapsedRealtime() + 30L
         syncController?.schedulePlay(resumePos, executionEpoch)
         server?.broadcastPlay(resumePos, executionEpoch, deviceOrientation, bezelPercent, scaleMode)
         updatePlayPauseButtonStates(true)

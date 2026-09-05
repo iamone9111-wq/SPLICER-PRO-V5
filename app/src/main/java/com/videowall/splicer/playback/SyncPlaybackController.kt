@@ -30,14 +30,16 @@ class SyncPlaybackController(
     }
 
     private fun initExoPlayer() {
-        // Configure low buffer delay for fast seeking and tight synchronized response
+        // Configure ultra-low buffer durations for instantaneous zero-latency playback
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                500,  // minBufferMs
-                1500, // maxBufferMs
-                250,  // bufferForPlaybackMs
-                500   // bufferForPlaybackAfterRebufferMs
+                50,   // minBufferMs (ultra-low buffer for local real-time sync)
+                300,  // maxBufferMs
+                0,    // bufferForPlaybackMs (start decoding and rendering immediately with 0ms delay)
+                50    // bufferForPlaybackAfterRebufferMs
             )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(0, false)
             .build()
 
         exoPlayer = ExoPlayer.Builder(context)
@@ -106,11 +108,13 @@ class SyncPlaybackController(
                 exoPlayer?.seekTo(startPositionMs)
             }
 
-            if (waitDurationMs > 0) {
-                Log.d(tag, "Waiting ${waitDurationMs}ms until synchronized start at $localExecutionTimeMs")
+            if (waitDurationMs in 1..40) {
                 delay(waitDurationMs)
+            } else if (waitDurationMs > 40) {
+                // Cap wait delay to ensure instant playback without noticeable latency
+                delay(20L)
             } else {
-                Log.w(tag, "Scheduled execution was in the past by ${-waitDurationMs}ms; starting immediately")
+                Log.d(tag, "Starting playback immediately in real time")
             }
 
             exoPlayer?.playWhenReady = true

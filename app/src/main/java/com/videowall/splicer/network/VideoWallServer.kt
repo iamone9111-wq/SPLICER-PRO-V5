@@ -277,7 +277,7 @@ class VideoWallServer(
 
     fun broadcastSchedulePlay(
         startPositionMs: Long,
-        executionDelayMs: Long = 200L,
+        executionDelayMs: Long = 30L,
         deviceOrientation: DeviceOrientation = this.deviceOrientation,
         bezelPercent: Float = this.bezelPercent,
         scaleMode: ScaleMode = this.currentScaleMode
@@ -295,7 +295,7 @@ class VideoWallServer(
         connectedClients.forEach { it.sendMessage(message) }
     }
 
-    fun broadcastSeek(targetPositionMs: Long, executionDelayMs: Long = 300L): Long {
+    fun broadcastSeek(targetPositionMs: Long, executionDelayMs: Long = 30L): Long {
         val targetSystemTimeMs = SystemClock.elapsedRealtime() + executionDelayMs
         val message = SyncMessage.Seek(targetPositionMs, targetSystemTimeMs)
         connectedClients.forEach { it.sendMessage(message) }
