@@ -28,6 +28,8 @@ import com.videowall.splicer.databinding.ActivityMainBinding
 import com.videowall.splicer.network.*
 import com.videowall.splicer.playback.SyncPlaybackController
 import com.videowall.splicer.transform.MatrixTransformHelper
+import java.io.File
+import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -340,6 +342,7 @@ class HostActivity : AppCompatActivity() {
         }
 
         server = VideoWallServer(
+            context = this,
             port = 8988,
             onClientConnected = { count, clientIp ->
                 runOnUiThread {
@@ -746,7 +749,6 @@ class HostActivity : AppCompatActivity() {
         binding.hostTextureView.post {
             updateMatrix()
         }
-        Toast.makeText(this, "🚀 Synchronized playback started on $screenCount screens!", Toast.LENGTH_SHORT).show()
     }
 
     private fun updateLayoutUI() {

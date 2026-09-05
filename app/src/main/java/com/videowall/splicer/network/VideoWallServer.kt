@@ -3,7 +3,6 @@ package com.videowall.splicer.network
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
-import com.google.gson.Gson
 import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -14,18 +13,28 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
+ * Physical/matrix slot assigned to a screen device in the video wall.
+ */
+data class ScreenSlot(
+    val deviceIndex: Int,
+    val row: Int,
+    val col: Int,
+    val rotationDeg: Int = 0
+)
+
+/**
  * High-performance TCP master server running on the Host device.
  * Manages WebSocket/TCP connections to client phones, synchronizes system clocks via NTP-like ping-pong,
  * assigns screen slots (rows, columns, orientation, bezel compensation), and broadcasts lockstep playback commands.
  */
 class VideoWallServer(
-    private val context: Context,
+    private val context: Context? = null,
     private val port: Int = 8988,
     private val onClientConnected: (clientCount: Int, clientIp: String) -> Unit,
-    private val onClientDisconnected: (clientCount: Int) -> Unit
+    private val onClientDisconnected: (clientCount: Int) -> Unit,
+    private val onHeartbeatReceived: ((heartbeat: SyncMessage.Heartbeat) -> Unit)? = null
 ) {
     private val tag = "VideoWallServer"
-    private val gson = Gson()
     private var serverSocket: ServerSocket? = null
     private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val connectedClients = CopyOnWriteArrayList<ClientHandler>()
@@ -317,9 +326,9 @@ class VideoWallServer(
                     // Immediate initial NTP clock sync handshake
                     sendPing()
 
-                    var line: String?
-                    while (isActive && reader?.readLine().also { line = it } != null) {
-                        line?.let { handleMessage(it) }
+                    while (isActive && !socket.isClosed) {
+                        val line = reader?.readLine() ?: break
+                        handleMessage(line)
                     }
                 } catch (e: Exception) {
                     Log.d(tag, "Client connection ended: ${e.message}")
@@ -335,21 +344,27 @@ class VideoWallServer(
         }
 
         private fun sendPing() {
-            val ping = SyncMessage.Ping(clientSendTimeMs = 0L, serverReceiveTimeMs = SystemClock.elapsedRealtime())
+            val ping = SyncMessage.Ping(t0ClientSent = SystemClock.elapsedRealtime())
             sendMessage(ping)
         }
 
-        private fun handleMessage(json: String) {
+        private fun handleMessage(rawJson: String) {
             try {
-                when {
-                    json.contains("\"type\":\"PING\"") -> {
-                        val ping = gson.fromJson(json, SyncMessage.Ping::class.java)
+                when (val message = ProtocolSerializer.deserialize(rawJson)) {
+                    is SyncMessage.Ping -> {
+                        val t1 = SystemClock.elapsedRealtime()
                         val pong = SyncMessage.Pong(
-                            clientSendTimeMs = ping.clientSendTimeMs,
-                            serverReceiveTimeMs = SystemClock.elapsedRealtime(),
-                            serverTransmitTimeMs = SystemClock.elapsedRealtime()
+                            t0ClientSent = message.t0ClientSent,
+                            t1ServerReceived = t1,
+                            t2ServerSent = SystemClock.elapsedRealtime()
                         )
                         sendMessage(pong)
+                    }
+                    is SyncMessage.Heartbeat -> {
+                        onHeartbeatReceived?.invoke(message)
+                    }
+                    else -> {
+                        Log.d(tag, "Received from client: $rawJson")
                     }
                 }
             } catch (e: Exception) {
@@ -360,8 +375,9 @@ class VideoWallServer(
         fun sendMessage(message: SyncMessage) {
             serverScope.launch(Dispatchers.IO) {
                 try {
-                    val json = gson.toJson(message)
-                    writer?.println(json)
+                    val json = ProtocolSerializer.serialize(message)
+                    writer?.print(json)
+                    writer?.flush()
                 } catch (e: Exception) {
                     Log.e(tag, "Failed to send message: ${e.message}")
                 }

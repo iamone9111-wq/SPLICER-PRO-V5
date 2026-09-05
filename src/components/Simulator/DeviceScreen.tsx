@@ -312,12 +312,16 @@ export const DeviceScreen: React.FC<DeviceScreenProps> = ({
         />
 
         {/* Flashing Device Identification Badge */}
-        {!isImmersionMode && isIdentifying && (
-          <div className="absolute inset-0 z-30 bg-indigo-600/90 flex flex-col items-center justify-center text-white backdrop-blur-sm animate-pulse">
-            <div className="text-4xl sm:text-5xl font-black font-mono">#{device.index + 1}</div>
-            <div className="text-xs font-semibold uppercase tracking-wider mt-1">{device.name}</div>
-            <div className="text-[10px] font-mono text-indigo-200 mt-0.5">
-              Position: [Row {device.assignedSegment.row}, Col {device.assignedSegment.col}]
+        {isIdentifying && (
+          <div className="absolute inset-0 z-30 bg-indigo-600/90 flex flex-col items-center justify-center text-white backdrop-blur-sm animate-pulse pointer-events-none">
+            <div className={`${isImmersionMode ? 'text-7xl sm:text-9xl' : 'text-4xl sm:text-5xl'} font-black font-mono tracking-tight drop-shadow-lg`}>
+              #{device.index + 1}
+            </div>
+            <div className={`${isImmersionMode ? 'text-lg sm:text-xl font-bold' : 'text-xs font-semibold'} uppercase tracking-wider mt-2 drop-shadow`}>
+              {device.name || `Screen #${device.index + 1}`}
+            </div>
+            <div className={`${isImmersionMode ? 'text-sm font-semibold' : 'text-[10px]'} font-mono text-indigo-200 mt-1 bg-black/40 px-3 py-1 rounded-full`}>
+              Position: Row {device.assignedSegment.row + 1}, Col {device.assignedSegment.col + 1}
             </div>
           </div>
         )}
