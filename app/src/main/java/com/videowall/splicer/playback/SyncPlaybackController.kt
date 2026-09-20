@@ -30,16 +30,16 @@ class SyncPlaybackController(
     }
 
     private fun initExoPlayer() {
-        // Configure ultra-low buffer durations for instantaneous zero-latency playback
+        // Configure robust streaming buffer durations for rock-solid zero-stutter playback over local Wi-Fi / Hotspot
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                50,   // minBufferMs (ultra-low buffer for local real-time sync)
-                300,  // maxBufferMs
-                0,    // bufferForPlaybackMs (start decoding and rendering immediately with 0ms delay)
-                50    // bufferForPlaybackAfterRebufferMs
+                1500, // minBufferMs (1.5s - absorbs Wi-Fi jitter seamlessly)
+                5000, // maxBufferMs (5s)
+                500,  // bufferForPlaybackMs (0.5s - allows decoder to fill and start immediately)
+                1000  // bufferForPlaybackAfterRebufferMs (1.0s)
             )
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(0, false)
+            .setBackBuffer(1000, false)
             .build()
 
         exoPlayer = ExoPlayer.Builder(context)
@@ -57,7 +57,14 @@ class SyncPlaybackController(
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
-                        Log.d(tag, "Playback state changed: $playbackState (ready=${playbackState == Player.STATE_READY})")
+                        val stateStr = when (playbackState) {
+                            Player.STATE_IDLE -> "IDLE"
+                            Player.STATE_BUFFERING -> "BUFFERING"
+                            Player.STATE_READY -> "READY"
+                            Player.STATE_ENDED -> "ENDED"
+                            else -> "UNKNOWN($playbackState)"
+                        }
+                        Log.d(tag, "Playback state: $stateStr (playWhenReady=${exoPlayer?.playWhenReady})")
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
@@ -67,7 +74,7 @@ class SyncPlaybackController(
                             controllerScope.launch {
                                 delay(600L)
                                 Log.d(tag, "Retrying media preparation after error: $uri")
-                                prepareMedia(uri)
+                                prepareMedia(uri, force = true)
                             }
                         }
                     }
@@ -75,8 +82,15 @@ class SyncPlaybackController(
             }
     }
 
-    fun prepareMedia(uri: Uri) {
+    fun hasMedia(): Boolean = currentUri != null
+
+    fun prepareMedia(uri: Uri, force: Boolean = false) {
+        if (!force && currentUri == uri && exoPlayer?.playbackState != Player.STATE_IDLE) {
+            Log.d(tag, "Media already preparing/prepared: $uri (state=${exoPlayer?.playbackState})")
+            return
+        }
         currentUri = uri
+        Log.d(tag, "Setting ExoPlayer media source: $uri (force=$force)")
         val mediaItem = MediaItem.fromUri(uri)
         exoPlayer?.apply {
             setMediaItem(mediaItem)

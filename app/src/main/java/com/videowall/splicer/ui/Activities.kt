@@ -202,7 +202,13 @@ class HostActivity : AppCompatActivity() {
 
     private val videoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
+            try {
+                contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {
+                // Some providers do not support persistable permissions
+            }
             selectedVideoUri = it
+            mediaServer?.setMediaFile(null)
             mediaServer?.setMediaUri(it)
             extractAndApplyVideoMetadata(it)
             syncController?.prepareMedia(it)
@@ -214,9 +220,10 @@ class HostActivity : AppCompatActivity() {
     private fun cacheVideoForStreaming(uri: Uri) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val cacheFile = File(cacheDir, "stream_source.mp4")
+                val tempFile = File(cacheDir, "stream_source_temp.mp4")
+                val finalFile = File(cacheDir, "stream_source.mp4")
                 val inStream = contentResolver.openInputStream(uri) ?: return@launch
-                val outStream = FileOutputStream(cacheFile)
+                val outStream = FileOutputStream(tempFile)
                 val buf = ByteArray(256 * 1024)
                 var read: Int
                 while (inStream.read(buf).also { read = it } != -1) {
@@ -225,8 +232,10 @@ class HostActivity : AppCompatActivity() {
                 outStream.flush()
                 outStream.close()
                 inStream.close()
-                Log.d("HostActivity", "Video cached successfully: ${cacheFile.length()} bytes")
-                mediaServer?.setMediaFile(cacheFile)
+                if (finalFile.exists()) finalFile.delete()
+                tempFile.renameTo(finalFile)
+                Log.d("HostActivity", "Video cached successfully: ${finalFile.length()} bytes")
+                mediaServer?.setMediaFile(finalFile)
             } catch (e: Exception) {
                 Log.w("HostActivity", "Caching error (direct channel active): ${e.message}")
             }
@@ -863,6 +872,7 @@ class HostActivity : AppCompatActivity() {
                 videoWidth = resolved.width
                 videoHeight = resolved.height
 
+                mediaServer?.setMediaFile(null)
                 mediaServer?.setMediaUri(streamUri)
                 syncController?.prepareMedia(streamUri)
 
@@ -1086,12 +1096,12 @@ class ClientActivity : AppCompatActivity() {
             },
             onMediaPrepared = { media ->
                 runOnUiThread {
-                    val fixedUri = if (media.mediaUri.contains(":8990/")) {
+                    val fixedUri = if (media.mediaUri.contains(":8990")) {
                         "http://$currentHostIp:8990/video.mp4"
                     } else {
                         media.mediaUri
                     }
-                    Log.d("ClientActivity", "Preparing media stream: $fixedUri")
+                    Log.d("ClientActivity", "Preparing media stream: $fixedUri (raw=${media.mediaUri}, hostIp=$currentHostIp)")
                     syncController?.prepareMedia(Uri.parse(fixedUri))
                 }
             },
@@ -1110,9 +1120,10 @@ class ClientActivity : AppCompatActivity() {
                         deviceOrientation = orientation,
                         bezelPercent = bezel
                     )
-                    // If media stream was not prepared yet or duration is 0, prepare immediately
-                    if (syncController?.durationMs == 0L) {
+                    // If media stream was not prepared yet, prepare immediately
+                    if (syncController?.hasMedia() != true) {
                         val fallbackStream = "http://$currentHostIp:8990/video.mp4"
+                        Log.d("ClientActivity", "Fallback preparing stream on play: $fallbackStream")
                         syncController?.prepareMedia(Uri.parse(fallbackStream))
                     }
                     syncController?.schedulePlay(startPositionMs, localExecutionTimeMs)

@@ -219,15 +219,9 @@ class VideoWallServer(
 
             // ALWAYS send media preparation if media is configured
             if (forceResendMedia && currentMediaUri != null) {
-                val clientLocalIp = client.socket.localAddress?.hostAddress ?: ""
-                val streamUri = if (clientLocalIp.isNotEmpty() && currentMediaUri!!.contains(":8990/")) {
-                    "http://$clientLocalIp:8990/video.mp4"
-                } else {
-                    currentMediaUri!!
-                }
                 client.sendMessage(
                     SyncMessage.PrepareMedia(
-                        mediaUri = streamUri,
+                        mediaUri = currentMediaUri!!,
                         videoWidth = videoWidth,
                         videoHeight = videoHeight,
                         durationMs = 0L
@@ -247,15 +241,9 @@ class VideoWallServer(
         // Ensure every client has media prepared before scheduling play
         currentMediaUri?.let { uri ->
             connectedClients.forEach { client ->
-                val clientLocalIp = client.socket.localAddress?.hostAddress ?: ""
-                val streamUri = if (clientLocalIp.isNotEmpty() && uri.contains(":8990/")) {
-                    "http://$clientLocalIp:8990/video.mp4"
-                } else {
-                    uri
-                }
                 client.sendMessage(
                     SyncMessage.PrepareMedia(
-                        mediaUri = streamUri,
+                        mediaUri = uri,
                         videoWidth = videoWidth,
                         videoHeight = videoHeight,
                         durationMs = 0L

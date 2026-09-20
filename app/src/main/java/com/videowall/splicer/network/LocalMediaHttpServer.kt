@@ -29,6 +29,10 @@ class LocalMediaHttpServer(
 
     fun setMediaUri(uri: Uri?) {
         this.currentUri = uri
+        // If changing URI, reset currentFile unless setMediaFile is called
+        if (uri == null) {
+            this.currentFile = null
+        }
         Log.d(tag, "Media URI registered for streaming: $uri")
     }
 
@@ -183,16 +187,18 @@ class LocalMediaHttpServer(
                 return
             }
 
-            // Seek directly to start byte with hardware channel
+            // Seek directly to start byte with hardware channel and read via ByteBuffer
             channel.position(startByte)
-            val buffer = ByteArray(64 * 1024)
+            val byteBuffer = java.nio.ByteBuffer.allocate(64 * 1024)
             var bytesRemaining = contentLength
 
             while (bytesRemaining > 0) {
-                val toRead = minOf(buffer.size.toLong(), bytesRemaining).toInt()
-                val bytesRead = fis.read(buffer, 0, toRead)
+                byteBuffer.clear()
+                val toRead = minOf(byteBuffer.capacity().toLong(), bytesRemaining).toInt()
+                byteBuffer.limit(toRead)
+                val bytesRead = channel.read(byteBuffer)
                 if (bytesRead <= 0) break
-                output.write(buffer, 0, bytesRead)
+                output.write(byteBuffer.array(), 0, bytesRead)
                 bytesRemaining -= bytesRead
             }
             output.flush()
@@ -359,13 +365,16 @@ class LocalMediaHttpServer(
 
             if (method.equals("HEAD", ignoreCase = true)) return
 
-            remoteConn.inputStream.use { inStream ->
-                val buffer = ByteArray(64 * 1024)
-                var bytesRead: Int
-                while (inStream.read(buffer).also { bytesRead = it } != -1) {
-                    output.write(buffer, 0, bytesRead)
+            val stream = if (responseCode < 400) remoteConn.inputStream else remoteConn.errorStream
+            if (stream != null) {
+                stream.use { inStream ->
+                    val buffer = ByteArray(64 * 1024)
+                    var bytesRead: Int
+                    while (inStream.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                    }
+                    output.flush()
                 }
-                output.flush()
             }
         } catch (e: Exception) {
             // Client closed connection or remote stream finished

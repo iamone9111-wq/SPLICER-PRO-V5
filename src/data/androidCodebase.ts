@@ -1019,13 +1019,13 @@ class SyncPlaybackController(
     private fun initExoPlayer() {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                50,   // minBufferMs (ultra-low buffer for local real-time sync)
-                300,  // maxBufferMs
-                0,    // bufferForPlaybackMs (instant zero-latency playback)
-                50    // bufferForPlaybackAfterRebufferMs
+                1500, // minBufferMs (1.5s - absorbs Wi-Fi jitter seamlessly)
+                5000, // maxBufferMs (5s)
+                500,  // bufferForPlaybackMs (0.5s - allows decoder to fill and start immediately)
+                1000  // bufferForPlaybackAfterRebufferMs (1.0s)
             )
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(0, false)
+            .setBackBuffer(1000, false)
             .build()
 
         exoPlayer = ExoPlayer.Builder(context)
@@ -1045,7 +1045,13 @@ class SyncPlaybackController(
             }
     }
 
-    fun prepareMedia(uri: Uri) {
+    fun hasMedia(): Boolean = currentUri != null
+
+    fun prepareMedia(uri: Uri, force: Boolean = false) {
+        if (!force && currentUri == uri && exoPlayer?.playbackState != Player.STATE_IDLE) {
+            return
+        }
+        currentUri = uri
         val mediaItem = MediaItem.fromUri(uri)
         exoPlayer?.apply {
             setMediaItem(mediaItem)
