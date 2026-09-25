@@ -284,7 +284,39 @@ sealed class SyncMessage {
     @SerialName("PAUSE")
     data class Pause(
         val currentPositionMs: Long = 0L,
-        val positionMs: Long = 0L
+        val positionMs: Long = 0L,
+        val isHostClosing: Boolean = false
+    ) : SyncMessage()
+
+    /**
+     * Instant zero-latency fast resume without decoder re-seeking or buffering delay.
+     */
+    @Serializable
+    @SerialName("FAST_RESUME")
+    data class FastResume(
+        val resumePositionMs: Long = 0L
+    ) : SyncMessage()
+
+    /**
+     * High-frequency master clock broadcast sent by Host every 300ms.
+     * Enforces tight clock-locking, micro-drift nudge, and host liveness detection.
+     */
+    @Serializable
+    @SerialName("MASTER_HEARTBEAT")
+    data class MasterHeartbeat(
+        val masterPositionMs: Long,
+        val isPlaying: Boolean,
+        val hostElapsedRealtimeMs: Long
+    ) : SyncMessage()
+
+    /**
+     * Broadcast when the Host app is closed, suspended, or exited by the user.
+     * Instructs all client display screens to instantly pause and freeze without playing independently.
+     */
+    @Serializable
+    @SerialName("HOST_SHUTDOWN")
+    data class HostShutdown(
+        val reason: String = "Host app closed"
     ) : SyncMessage()
 
     /**
@@ -1019,10 +1051,10 @@ class SyncPlaybackController(
     private fun initExoPlayer() {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                1500, // minBufferMs (1.5s - absorbs Wi-Fi jitter seamlessly)
-                5000, // maxBufferMs (5s)
-                500,  // bufferForPlaybackMs (0.5s - allows decoder to fill and start immediately)
-                1000  // bufferForPlaybackAfterRebufferMs (1.0s)
+                1000, // minBufferMs (1.0s)
+                4000, // maxBufferMs (4.0s)
+                200,  // bufferForPlaybackMs (0.2s - instant playback start)
+                400   // bufferForPlaybackAfterRebufferMs (0.4s)
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .setBackBuffer(1000, false)
@@ -1067,14 +1099,14 @@ class SyncPlaybackController(
             val now = SystemClock.elapsedRealtime()
             val waitDurationMs = localExecutionTimeMs - now
 
-            exoPlayer?.seekTo(startPositionMs)
+            // Avoid redundant seeks which flush ExoPlayer decoder pipelines
+            val curPos = exoPlayer?.currentPosition ?: 0L
+            if (Math.abs(curPos - startPositionMs) > 800L) {
+                exoPlayer?.seekTo(startPositionMs)
+            }
 
-            if (waitDurationMs in 1..40) {
+            if (waitDurationMs in 1..25) {
                 delay(waitDurationMs)
-            } else if (waitDurationMs > 40) {
-                delay(20L)
-            } else {
-                Log.d(tag, "Starting playback immediately in real time")
             }
 
             exoPlayer?.playWhenReady = true
@@ -1082,9 +1114,16 @@ class SyncPlaybackController(
         }
     }
 
+    fun resumeFast() {
+        scheduledPlayJob?.cancel()
+        exoPlayer?.playWhenReady = true
+        exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
+    }
+
     fun pause() {
         scheduledPlayJob?.cancel()
         exoPlayer?.playWhenReady = false
+        exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
     }
 
     fun seekTo(positionMs: Long) {
@@ -1096,18 +1135,20 @@ class SyncPlaybackController(
         val driftMs = current - masterPositionMs
 
         when {
-            driftMs > 100 || driftMs < -100 -> {
+            driftMs > 300 || driftMs < -300 -> {
                 exoPlayer?.seekTo(masterPositionMs)
                 exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
             }
-            driftMs > 15 -> {
-                exoPlayer?.playbackParameters = PlaybackParameters(0.98f)
+            driftMs > 30 -> {
+                exoPlayer?.playbackParameters = PlaybackParameters(0.96f)
             }
-            driftMs < -15 -> {
-                exoPlayer?.playbackParameters = PlaybackParameters(1.02f)
+            driftMs < -30 -> {
+                exoPlayer?.playbackParameters = PlaybackParameters(1.04f)
             }
             else -> {
-                exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
+                if (exoPlayer?.playbackParameters?.speed != 1.0f) {
+                    exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
+                }
             }
         }
     }

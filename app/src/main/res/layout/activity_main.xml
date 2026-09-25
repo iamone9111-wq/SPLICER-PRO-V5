@@ -47,36 +47,38 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="#0F172A"
-            android:padding="18dp"
+            android:background="@drawable/bg_glass_card_accent"
+            android:padding="20dp"
             android:clickable="true"
             android:focusable="true"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="18dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="👑 I am a Host (Master)"
-                android:textColor="#818CF8"
-                android:textSize="17sp"
+                android:textColor="#A5B4FC"
+                android:textSize="18sp"
                 android:textStyle="bold"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="6dp" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Create video wall, load local video, configure multi-screen matrix, and broadcast synchronization to all client phones."
+                android:text="Create video wall, load local video, configure multi-screen matrix, and broadcast real-time lockstep synchronization to all client phones."
                 android:textColor="#CBD5E1"
                 android:textSize="12sp"
-                android:layout_marginBottom="12dp" />
+                android:lineSpacingExtra="2dp"
+                android:layout_marginBottom="16dp" />
 
             <Button
                 android:id="@+id/btnHost"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:text="Select Host Master"
-                android:backgroundTint="#5850EC"
-                android:textColor="#FFFFFF" />
+                android:background="@drawable/bg_glass_button_primary"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <!-- Role Option 2: Join Screen -->
@@ -85,8 +87,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="#0F172A"
-            android:padding="18dp"
+            android:background="@drawable/bg_glass_card"
+            android:padding="20dp"
             android:clickable="true"
             android:focusable="true">
 
@@ -95,17 +97,18 @@
                 android:layout_height="wrap_content"
                 android:text="📱 Join Screen (Client)"
                 android:textColor="#34D399"
-                android:textSize="17sp"
+                android:textSize="18sp"
                 android:textStyle="bold"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="6dp" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Connect this phone to the Host to display sliced video. Both phones must be on the same Wi-Fi or Hotspot."
+                android:text="Display sliced synchronized video. Connects directly to Host device. Screen automatically pauses if Host disconnects."
                 android:textColor="#CBD5E1"
                 android:textSize="12sp"
-                android:layout_marginBottom="10dp" />
+                android:lineSpacingExtra="2dp"
+                android:layout_marginBottom="12dp" />
 
             <!-- Auto-Discovery Status Badge -->
             <TextView
@@ -115,16 +118,17 @@
                 android:text="🔍 Searching for Host on local network..."
                 android:textColor="#38BDF8"
                 android:textSize="11sp"
-                android:background="#1E293B"
-                android:padding="8dp"
+                android:background="@drawable/bg_glass_pill"
+                android:paddingVertical="8dp"
+                android:paddingHorizontal="12dp"
                 android:gravity="center"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="10dp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
+                android:layout_marginBottom="10dp">
 
                 <Button
                     android:id="@+id/btnUseHotspotIp"
@@ -133,7 +137,7 @@
                     android:layout_weight="1"
                     android:text="⚡ Use Hotspot (192.168.43.1)"
                     android:textSize="11sp"
-                    android:backgroundTint="#334155"
+                    android:background="@drawable/bg_glass_button_secondary"
                     android:textColor="#38BDF8"
                     android:padding="0dp" />
             </LinearLayout>
@@ -145,19 +149,20 @@
                 android:hint="Host IP (e.g. 192.168.43.1 or 192.168.1.x)"
                 android:textColor="#F8FAFC"
                 android:textColorHint="#64748B"
-                android:background="#1E293B"
-                android:paddingHorizontal="12dp"
+                android:background="@drawable/bg_glass_pill"
+                android:paddingHorizontal="16dp"
                 android:inputType="textUri"
-                android:textSize="14sp"
-                android:layout_marginBottom="12dp"/>
+                android:textSize="13sp"
+                android:layout_marginBottom="14dp"/>
 
             <Button
                 android:id="@+id/btnJoin"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:text="Join Video Wall"
-                android:backgroundTint="#10B981"
-                android:textColor="#FFFFFF"/>
+                android:background="@drawable/bg_glass_button_primary"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

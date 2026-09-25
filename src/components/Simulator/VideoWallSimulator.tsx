@@ -89,7 +89,7 @@ export const VideoWallSimulator: React.FC = () => {
   // Client device telemetry state
   const [devices, setDevices] = useState<ClientDevice[]>([]);
 
-  // Setup broadcast bus for cross-tab sync
+  // Setup broadcast bus for cross-tab sync and periodic master ticks
   useEffect(() => {
     broadcastBusRef.current = new VideoWallBroadcastBus((data) => {
       if (data.type === 'REQUEST_STATE') {
@@ -103,8 +103,33 @@ export const VideoWallSimulator: React.FC = () => {
         });
       }
     });
-    return () => broadcastBusRef.current?.close();
-  }, [isPlaying, currentTime, orientation, totalDevices, selectedVideoId]);
+
+    // Periodic Master Clock Tick (every 400ms while host is active)
+    const tickInterval = setInterval(() => {
+      if (pageMode === 'host_settings') {
+        broadcastBusRef.current?.broadcast({
+          type: 'MASTER_HEARTBEAT',
+          isPlaying,
+          positionMs: currentTime * 1000,
+          timestamp: Date.now()
+        });
+      }
+    }, 400);
+
+    return () => {
+      clearInterval(tickInterval);
+      broadcastBusRef.current?.close();
+    };
+  }, [isPlaying, currentTime, orientation, totalDevices, selectedVideoId, pageMode]);
+
+  // Broadcast shutdown when host exits host mode
+  useEffect(() => {
+    if (pageMode !== 'host_settings') {
+      broadcastBusRef.current?.broadcast({
+        type: 'HOST_SHUTDOWN'
+      });
+    }
+  }, [pageMode]);
 
   // Request screen wake lock during active playback session to keep display awake
   useEffect(() => {

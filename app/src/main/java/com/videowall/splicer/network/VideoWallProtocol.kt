@@ -124,7 +124,39 @@ sealed class SyncMessage {
     @SerialName("PAUSE")
     data class Pause(
         val currentPositionMs: Long = 0L,
-        val positionMs: Long = 0L
+        val positionMs: Long = 0L,
+        val isHostClosing: Boolean = false
+    ) : SyncMessage()
+
+    /**
+     * Instant zero-latency fast resume without decoder re-seeking or buffering delay.
+     */
+    @Serializable
+    @SerialName("FAST_RESUME")
+    data class FastResume(
+        val resumePositionMs: Long = 0L
+    ) : SyncMessage()
+
+    /**
+     * High-frequency master clock broadcast sent by Host every 300ms.
+     * Enforces tight clock-locking, micro-drift nudge, and host liveness detection.
+     */
+    @Serializable
+    @SerialName("MASTER_HEARTBEAT")
+    data class MasterHeartbeat(
+        val masterPositionMs: Long,
+        val isPlaying: Boolean,
+        val hostElapsedRealtimeMs: Long
+    ) : SyncMessage()
+
+    /**
+     * Broadcast when the Host app is closed, suspended, or exited by the user.
+     * Instructs all client display screens to instantly pause and freeze/blank without playing independently.
+     */
+    @Serializable
+    @SerialName("HOST_SHUTDOWN")
+    data class HostShutdown(
+        val reason: String = "Host app closed"
     ) : SyncMessage()
 
     /**

@@ -27,50 +27,54 @@ export const RoleSelectionScreen: React.FC<RoleSelectionScreenProps> = ({
       </div>
 
       {/* Role Selection Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+        {/* Ambient Glows */}
+        <div className="absolute -top-10 left-1/4 w-72 h-72 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none -z-10" />
+        <div className="absolute -bottom-10 right-1/4 w-72 h-72 bg-cyan-600/15 rounded-full blur-3xl pointer-events-none -z-10" />
+
         {/* Host Card */}
         <div
           id="btn-role-host"
           onClick={onSelectHost}
-          className="group relative bg-slate-900/80 hover:bg-slate-900 border-2 border-slate-800 hover:border-indigo-500/80 rounded-2xl p-6 sm:p-7 flex flex-col justify-between cursor-pointer transition-all duration-200 hover:shadow-2xl hover:shadow-indigo-500/10 hover:-translate-y-1"
+          className="group relative glass-card glass-card-hover rounded-3xl p-7 flex flex-col justify-between cursor-pointer border border-white/10 hover:border-indigo-500/50 shadow-[0_12px_40px_rgba(0,0,0,0.5)] transition-all duration-300"
         >
-          <div className="absolute top-4 right-4 text-[10px] font-mono font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-2.5 py-0.5 rounded-full">
+          <div className="absolute top-5 right-5 text-[10px] font-mono font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full backdrop-blur-md shadow-sm">
             MASTER CONTROLLER
           </div>
 
           <div className="space-y-4">
-            <div className="w-14 h-14 rounded-xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600/30 to-blue-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_20px_rgba(99,102,241,0.25)]">
               <Tv className="w-7 h-7" />
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="text-lg font-bold text-white group-hover:text-indigo-300 transition-colors">
+              <h3 className="text-xl font-bold text-white group-hover:text-indigo-300 transition-colors">
                 I am a Host (Master)
               </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Configure wall layout, screen count, custom grid (R×C), aspect ratio, and video splicing. Broadcasts NTP synchronized video to all connected phone screens.
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Configure wall layout, screen count, custom grid (R×C), aspect ratio, and video splicing. Broadcasts real-time synchronized video and master clock ticks to all connected client screens.
               </p>
             </div>
 
-            <div className="pt-2 space-y-2 text-xs text-slate-400">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+            <div className="pt-2 space-y-2.5 text-xs text-slate-300 font-medium">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
                 <span>Arbitrary matrix grid slicing (Custom Rows × Columns)</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                <span>Live interactive screen layout preview</span>
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 shadow-[0_0_8px_#818cf8]" />
+                <span>Zero-latency playback resume & lockstep sync engine</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                <span>Distraction-free full immersion video playback</span>
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                <span>Master watchdog: Automatic client freeze when host stops</span>
               </div>
             </div>
           </div>
 
-          <div className="pt-6 mt-4 border-t border-slate-800 flex items-center justify-between text-xs font-semibold text-indigo-400 group-hover:text-indigo-300">
+          <div className="pt-6 mt-5 border-t border-white/10 flex items-center justify-between text-xs font-semibold text-indigo-400 group-hover:text-cyan-300">
             <span>Enter Host Master Settings</span>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
           </div>
         </div>
 
@@ -78,56 +82,56 @@ export const RoleSelectionScreen: React.FC<RoleSelectionScreenProps> = ({
         <div
           id="btn-role-join"
           onClick={onSelectJoin}
-          className="group relative bg-slate-900/80 hover:bg-slate-900 border-2 border-slate-800 hover:border-emerald-500/80 rounded-2xl p-6 sm:p-7 flex flex-col justify-between cursor-pointer transition-all duration-200 hover:shadow-2xl hover:shadow-emerald-500/10 hover:-translate-y-1"
+          className="group relative glass-card glass-card-hover rounded-3xl p-7 flex flex-col justify-between cursor-pointer border border-white/10 hover:border-emerald-500/50 shadow-[0_12px_40px_rgba(0,0,0,0.5)] transition-all duration-300"
         >
-          <div className="absolute top-4 right-4 text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+          <div className="absolute top-5 right-5 text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-full backdrop-blur-md shadow-sm">
             DISPLAY NODE
           </div>
 
           <div className="space-y-4">
-            <div className="w-14 h-14 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600/30 to-teal-500/20 border border-emerald-400/30 text-emerald-300 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_20px_rgba(16,185,129,0.25)]">
               <Smartphone className="w-7 h-7" />
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="text-lg font-bold text-white group-hover:text-emerald-300 transition-colors">
+              <h3 className="text-xl font-bold text-white group-hover:text-emerald-300 transition-colors">
                 Join Screen (Client)
               </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Connect this device as a synchronized screen in the video wall. Enter the Host IP to automatically receive your slice coordinates and render seamless video.
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Connect this device as a synchronized display screen in the wall. Connects directly to the Host's local stream with sub-millisecond drift correction.
               </p>
             </div>
 
-            <div className="pt-2 space-y-2 text-xs text-slate-400">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <div className="pt-2 space-y-2.5 text-xs text-slate-300 font-medium">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
                 <span>Auto-detect Host IP over local Wi-Fi / Hotspot</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
                 <span>Screen position & rotation orientation preview</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>Full-screen hardware accelerated TextureView</span>
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 shadow-[0_0_8px_#818cf8]" />
+                <span>Pure display terminal: Master-synchronized TextureView</span>
               </div>
             </div>
           </div>
 
-          <div className="pt-6 mt-4 border-t border-slate-800 flex items-center justify-between text-xs font-semibold text-emerald-400 group-hover:text-emerald-300">
+          <div className="pt-6 mt-5 border-t border-white/10 flex items-center justify-between text-xs font-semibold text-emerald-400 group-hover:text-emerald-300">
             <span>Configure Client Screen & Join</span>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
           </div>
         </div>
       </div>
 
       {/* Quick Setup Notes */}
-      <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4 flex items-start gap-3 text-xs text-slate-400">
-        <Wifi className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+      <div className="glass-panel rounded-2xl p-4.5 flex items-start gap-3 text-xs text-slate-300 border border-white/10 shadow-lg">
+        <Wifi className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
         <div className="space-y-1">
-          <span className="font-semibold text-slate-200">Local Network Requirement:</span>
-          <p className="leading-relaxed">
-            All devices must be connected to the same Wi-Fi router or phone Mobile Hotspot. Port <code className="text-indigo-300 font-mono">8988</code> is used for ultra-low latency TCP/UDP command & clock synchronization.
+          <span className="font-bold text-white">Local Network Synchronization Architecture:</span>
+          <p className="leading-relaxed text-slate-400">
+            Host streams media chunks and lockstep clock ticks over port <code className="text-cyan-300 font-mono bg-white/[0.06] px-1.5 py-0.5 rounded border border-white/10">8988 / 8990</code>. Client displays behave as synchronized screens, immediately freezing if the Host shuts down.
           </p>
         </div>
       </div>

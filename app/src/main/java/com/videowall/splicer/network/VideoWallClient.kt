@@ -24,13 +24,19 @@ class VideoWallClient(
     private val onPause: (positionMs: Long) -> Unit,
     private val onSeekScheduled: (targetPositionMs: Long, localExecutionTimeMs: Long) -> Unit,
     private val onSyncOffsetUpdated: (offsetMs: Long, rttMs: Long) -> Unit,
-    private val onIdentify: ((displayIndex: Int, durationMs: Long) -> Unit)? = null
+    private val onIdentify: ((displayIndex: Int, durationMs: Long) -> Unit)? = null,
+    private val onMasterHeartbeat: ((masterPositionMs: Long, isPlaying: Boolean) -> Unit)? = null,
+    private val onHostShutdown: (() -> Unit)? = null,
+    private val onFastResume: ((resumePositionMs: Long) -> Unit)? = null,
+    private val onHostTimeout: (() -> Unit)? = null
 ) {
     private val tag = "VideoWallClient"
     private var socket: Socket? = null
     private var writer: PrintWriter? = null
     private var reader: BufferedReader? = null
     private val clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var lastHostActivityTimeMs: Long = SystemClock.elapsedRealtime()
+    private var isHostTimedOut: Boolean = false
 
     /**
      * Estimated Clock Offset between Host Clock and Client Clock in milliseconds.
@@ -106,13 +112,33 @@ class VideoWallClient(
     }
 
     /**
-     * Continuously exchanges NTP Ping/Pong messages every 2 seconds to keep clock synchronization accurate to <2ms.
+     * Continuously exchanges NTP Ping/Pong messages every 2 seconds to keep clock synchronization accurate to <2ms,
+     * and monitors Host liveness to halt client screens immediately if Host drops or closes.
      */
     private fun startNtpSyncLoop() {
         clientScope.launch {
+            var counter = 0
             while (isActive && socket?.isClosed == false) {
-                sendPing()
-                delay(2000L)
+                // Ping every 1500ms
+                if (counter % 3 == 0) {
+                    sendPing()
+                }
+                delay(500L)
+                counter++
+
+                // Host Liveness Watchdog: Check if Host has been silent for > 2.5 seconds
+                val timeSinceLastHostActivity = SystemClock.elapsedRealtime() - lastHostActivityTimeMs
+                if (timeSinceLastHostActivity > 2500L) {
+                    if (!isHostTimedOut) {
+                        isHostTimedOut = true
+                        Log.w(tag, "Host silent for ${timeSinceLastHostActivity}ms - triggering onHostTimeout")
+                        withContext(Dispatchers.Main) {
+                            onHostTimeout?.invoke()
+                        }
+                    }
+                } else {
+                    isHostTimedOut = false
+                }
             }
         }
     }
@@ -125,6 +151,7 @@ class VideoWallClient(
 
     private fun handleHostMessage(rawJson: String) {
         try {
+            lastHostActivityTimeMs = SystemClock.elapsedRealtime()
             when (val message = ProtocolSerializer.deserialize(rawJson)) {
                 is SyncMessage.Pong -> {
                     val t3ClientReceived = SystemClock.elapsedRealtime()
@@ -146,6 +173,15 @@ class VideoWallClient(
                 is SyncMessage.SchedulePlay -> {
                     val localExecTime = message.hostExecutionEpochMs - clockOffsetMs
                     onPlayScheduled(message.startPositionMs, localExecTime, message.deviceOrientation, message.bezelPercent, message.scaleMode)
+                }
+                is SyncMessage.FastResume -> {
+                    onFastResume?.invoke(message.resumePositionMs)
+                }
+                is SyncMessage.MasterHeartbeat -> {
+                    onMasterHeartbeat?.invoke(message.masterPositionMs, message.isPlaying)
+                }
+                is SyncMessage.HostShutdown -> {
+                    onHostShutdown?.invoke()
                 }
                 is SyncMessage.Pause -> {
                     val pos = if (message.currentPositionMs > 0) message.currentPositionMs else message.positionMs

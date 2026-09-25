@@ -193,28 +193,28 @@ export const DeviceScreen: React.FC<DeviceScreenProps> = ({
         isImmersionMode
           ? 'p-0 m-0 bg-black rounded-none border-0 shadow-none ring-0'
           : showBezel
-          ? `p-2 rounded-xl shadow-lg border ring-1 ${
+          ? `p-2.5 rounded-2xl shadow-2xl border backdrop-blur-xl ${
               isEnabled
-                ? 'bg-slate-900 border-slate-800 ring-slate-700/50'
-                : 'bg-slate-950/70 border-slate-900 opacity-60'
+                ? 'bg-slate-900/60 border-white/10 ring-1 ring-white/10 shadow-[0_12px_36px_rgba(0,0,0,0.5)]'
+                : 'bg-slate-950/70 border-white/5 opacity-50'
             }`
-          : 'bg-black rounded-md overflow-hidden border border-slate-800'
+          : 'bg-black rounded-xl overflow-hidden border border-white/10'
       }`}
     >
       {/* Device Header in Bezel Mode */}
       {!isImmersionMode && showBezel && (
-        <div className="flex items-center justify-between px-1.5 pb-1.5 text-[10px] text-slate-400">
+        <div className="flex items-center justify-between px-1.5 pb-2 text-[10px] text-slate-400">
           <div className="flex items-center gap-1.5 font-medium text-slate-300">
             {isHost ? (
-              <span className="flex items-center gap-1 text-emerald-400 font-mono font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> MASTER NODE
+              <span className="flex items-center gap-1.5 text-emerald-300 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20 backdrop-blur-md">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#34d399]"></span> MASTER 01
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-indigo-400 font-mono font-semibold">
-                <Smartphone className="w-3 h-3" /> NODE_0{device.index + 1}
+              <span className="flex items-center gap-1.5 text-cyan-300 font-mono font-bold bg-cyan-500/10 px-2 py-0.5 rounded-lg border border-cyan-500/20 backdrop-blur-md">
+                <Smartphone className="w-3 h-3 text-cyan-400" /> SCREEN 0{device.index + 1}
               </span>
             )}
-            <span className="bg-slate-950 text-indigo-300 px-1.5 py-0.5 rounded border border-slate-800 font-mono text-[9px]">
+            <span className="bg-white/[0.05] text-indigo-300 px-2 py-0.5 rounded-lg border border-white/10 font-mono text-[9px] backdrop-blur-md">
               R{device.assignedSegment.row}:C{device.assignedSegment.col}
             </span>
           </div>

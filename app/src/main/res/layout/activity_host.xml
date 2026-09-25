@@ -50,7 +50,7 @@
                     android:layout_height="38dp"
                     android:text="Change Role"
                     android:textSize="12sp"
-                    android:backgroundTint="#1E293B"
+                    android:background="@drawable/bg_glass_button_secondary"
                     android:textColor="#CBD5E1" />
             </LinearLayout>
 
@@ -59,8 +59,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:background="#0B1021"
-                android:padding="12dp"
+                android:background="@drawable/bg_glass_card"
+                android:padding="16dp"
                 android:layout_marginBottom="16dp">
 
                 <LinearLayout
@@ -115,7 +115,7 @@
                         android:text="▶ START IMMERSION PLAYBACK"
                         android:textSize="13sp"
                         android:textStyle="bold"
-                        android:backgroundTint="#10B981"
+                        android:background="@drawable/bg_glass_button_primary"
                         android:textColor="#FFFFFF" />
 
                     <ImageButton
@@ -746,15 +746,17 @@
         </LinearLayout>
     </ScrollView>
 
-    <!-- 2. IMMERSION CONTROLS (Floating HUD revealed during playback) -->
+    <!-- 2. IMMERSION CONTROLS (Floating Modern Blurry Glass HUD revealed during playback) -->
     <LinearLayout
         android:id="@+id/immersionOverlayControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#DD090D1C"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="10dp"
+        android:background="@drawable/bg_glass_hud"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="12dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="16dp"
         android:layout_gravity="bottom"
         android:visibility="gone">
 
@@ -770,7 +772,7 @@
             android:splitTrack="false"
             android:paddingStart="4dp"
             android:paddingEnd="4dp"
-            android:layout_marginBottom="6dp" />
+            android:layout_marginBottom="8dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -783,7 +785,7 @@
                 android:layout_width="40dp"
                 android:layout_height="38dp"
                 android:src="@drawable/ic_replay_10"
-                android:background="@drawable/bg_control_button"
+                android:background="@drawable/bg_glass_button_secondary"
                 android:contentDescription="Rewind 10s"
                 android:scaleType="centerInside"
                 android:padding="8dp" />
@@ -795,7 +797,7 @@
                 android:text="⏸ Pause"
                 android:textSize="12sp"
                 android:textStyle="bold"
-                android:backgroundTint="#2563EB"
+                android:background="@drawable/bg_glass_button_primary"
                 android:textColor="#FFFFFF"
                 android:layout_marginStart="8dp" />
 
@@ -804,7 +806,7 @@
                 android:layout_width="40dp"
                 android:layout_height="38dp"
                 android:src="@drawable/ic_forward_10"
-                android:background="@drawable/bg_control_button"
+                android:background="@drawable/bg_glass_button_secondary"
                 android:contentDescription="Forward 10s"
                 android:scaleType="centerInside"
                 android:padding="8dp"
@@ -830,8 +832,8 @@
                 android:text="💡 Flash"
                 android:textSize="11sp"
                 android:textStyle="bold"
-                android:backgroundTint="#4F46E5"
-                android:textColor="#FFFFFF"
+                android:background="@drawable/bg_glass_button_secondary"
+                android:textColor="#38BDF8"
                 android:layout_marginEnd="8dp" />
 
             <Button
@@ -841,7 +843,7 @@
                 android:text="✕ Settings"
                 android:textSize="11sp"
                 android:textStyle="bold"
-                android:backgroundTint="#334155"
+                android:background="@drawable/bg_glass_button_secondary"
                 android:textColor="#FFFFFF" />
         </LinearLayout>
     </LinearLayout>

@@ -17,8 +17,11 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="12dp"
-        android:background="#990F172A"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
+        android:background="@drawable/bg_glass_pill"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
         android:layout_gravity="top|end">
         <TextView
             android:id="@+id/tvScreenIndex"
@@ -26,14 +29,16 @@
             android:layout_height="wrap_content"
             android:text="Connecting to Host..."
             android:textColor="#FFFFFF"
+            android:textSize="12sp"
             android:textStyle="bold" />
         <TextView
             android:id="@+id/tvSyncTelemetry"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Offset: 0ms | RTT: 0ms"
+            android:text="Lockstep Sync: Active"
             android:textColor="#38BDF8"
-            android:textSize="12sp" />
+            android:fontFamily="monospace"
+            android:textSize="11sp" />
     </LinearLayout>
 
     <!-- Large Screen Identification Flash Overlay -->
@@ -72,7 +77,7 @@
         android:id="@+id/cardConnectionError"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#E6050811"
+        android:background="#B3050811"
         android:padding="24dp"
         android:visibility="gone">
 
@@ -81,15 +86,15 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:layout_gravity="center"
-            android:background="#0F172A"
+            android:background="@drawable/bg_glass_card"
             android:padding="24dp"
             android:gravity="center">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="⚠️ Connection Trouble"
-                android:textColor="#EF4444"
+                android:text="⚠️ Host Disconnected"
+                android:textColor="#F87171"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
@@ -98,20 +103,20 @@
                 android:id="@+id/tvErrorMessage"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Could not reach the Host at 10.21.246.144:8988."
+                android:text="Host master device disconnected. Screen paused."
                 android:textColor="#F8FAFC"
                 android:textSize="13sp"
                 android:gravity="center"
-                android:layout_marginBottom="12dp" />
+                android:layout_marginBottom="14dp" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="💡 Connection Tips:\n1. If connected to the Host's Mobile Hotspot, the Host IP is ALWAYS 192.168.43.1.\n2. Do NOT use mobile data IP (10.x.x.x). Turn off mobile data or connect via Hotspot / Home Wi-Fi."
+                android:text="💡 Connection Tips:\n1. If connected to Host Mobile Hotspot, Host IP is ALWAYS 192.168.43.1.\n2. Ensure Host app is open and both phones are on same Wi-Fi/Hotspot."
                 android:textColor="#94A3B8"
                 android:textSize="12sp"
-                android:background="#1E293B"
-                android:padding="10dp"
+                android:background="@drawable/bg_glass_pill"
+                android:padding="12dp"
                 android:layout_marginBottom="16dp" />
 
             <Button
@@ -119,8 +124,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:text="⚡ Try Hotspot IP (192.168.43.1)"
-                android:backgroundTint="#0284C7"
+                android:background="@drawable/bg_glass_button_primary"
                 android:textColor="#FFFFFF"
+                android:textStyle="bold"
                 android:layout_marginBottom="10dp" />
 
             <LinearLayout
@@ -133,8 +139,8 @@
                     android:layout_width="0dp"
                     android:layout_height="44dp"
                     android:layout_weight="1"
-                    android:text="🔄 Retry"
-                    android:backgroundTint="#334155"
+                    android:text="🔄 Reconnect"
+                    android:background="@drawable/bg_glass_button_secondary"
                     android:textColor="#F8FAFC"
                     android:layout_marginEnd="6dp" />
 
@@ -144,7 +150,7 @@
                     android:layout_height="44dp"
                     android:layout_weight="1"
                     android:text="⬅️ Change IP"
-                    android:backgroundTint="#475569"
+                    android:background="@drawable/bg_glass_button_secondary"
                     android:textColor="#F8FAFC"
                     android:layout_marginStart="6dp" />
             </LinearLayout>

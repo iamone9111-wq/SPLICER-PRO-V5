@@ -31,11 +31,16 @@ export const PopoutClientScreen: React.FC<PopoutClientScreenProps> = ({
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTimeMs, setCurrentTimeMs] = useState<number>(0);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isHostOffline, setIsHostOffline] = useState<boolean>(false);
+  const [lastHeartbeatTime, setLastHeartbeatTime] = useState<number>(Date.now());
   const broadcastBusRef = useRef<VideoWallBroadcastBus | null>(null);
 
   useEffect(() => {
     broadcastBusRef.current = new VideoWallBroadcastBus((data) => {
-      if (data.type === 'SCHEDULED_PLAY') {
+      setLastHeartbeatTime(Date.now());
+      setIsHostOffline(false);
+
+      if (data.type === 'SCHEDULED_PLAY' || data.type === 'FAST_RESUME') {
         setIsPlaying(true);
         setCurrentTimeMs(data.startPositionMs || 0);
       } else if (data.type === 'PAUSE') {
@@ -43,11 +48,27 @@ export const PopoutClientScreen: React.FC<PopoutClientScreenProps> = ({
         setCurrentTimeMs(data.currentPositionMs || 0);
       } else if (data.type === 'SEEK') {
         setCurrentTimeMs(data.targetPositionMs || 0);
+      } else if (data.type === 'HOST_SHUTDOWN') {
+        setIsPlaying(false);
+        setIsHostOffline(true);
+      } else if (data.type === 'MASTER_HEARTBEAT') {
+        setIsPlaying(data.isPlaying);
+        if (data.positionMs !== undefined) {
+          setCurrentTimeMs(data.positionMs);
+        }
       }
     });
 
     // Request state from host
     broadcastBusRef.current.broadcast({ type: 'REQUEST_STATE' });
+
+    // Host watchdog: If no heartbeat from host for > 3.0s, freeze playback
+    const watchdogInterval = setInterval(() => {
+      if (Date.now() - lastHeartbeatTime > 3500) {
+        setIsHostOffline(true);
+        setIsPlaying(false);
+      }
+    }, 1000);
 
     // Request Screen Wake Lock to keep display awake during video wall operation
     let wakeLock: any = null;
@@ -70,13 +91,14 @@ export const PopoutClientScreen: React.FC<PopoutClientScreenProps> = ({
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      clearInterval(watchdogInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (wakeLock) {
         wakeLock.release().catch(() => {});
       }
       broadcastBusRef.current?.close();
     };
-  }, []);
+  }, [lastHeartbeatTime]);
 
   // Continuous animation loop rendering the test pattern / spliced canvas
   useEffect(() => {
@@ -207,20 +229,45 @@ export const PopoutClientScreen: React.FC<PopoutClientScreenProps> = ({
         className="w-full h-full object-cover"
       />
 
-      {/* Floating HUD Controls */}
-      <div className="absolute top-4 left-4 flex items-center gap-2 bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800 text-xs font-mono text-slate-200">
-        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        <span>
-          Screen #{deviceIndex + 1} • [R{customRow ?? 0}:C{customCol ?? deviceIndex}]
+      {/* Floating Blurry Glass HUD Controls */}
+      <div className="absolute top-4 left-4 flex items-center gap-2.5 glass-hud px-4 py-2 rounded-2xl text-xs font-mono text-slate-200 shadow-2xl border border-white/10">
+        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+        <span className="font-semibold text-white">
+          Screen #{deviceIndex + 1}
         </span>
-        <span className="text-slate-500">|</span>
-        <span className="text-blue-400">{orientation.toUpperCase()}</span>
+        <span className="text-slate-500">•</span>
+        <span className="text-cyan-300">
+          [R{customRow ?? 0}:C{customCol ?? deviceIndex}]
+        </span>
+        <span className="text-slate-500">•</span>
+        <span className="text-indigo-300 font-bold">{orientation.toUpperCase()}</span>
       </div>
+
+      {/* Host Disconnected / Offline Blurry Glass Banner */}
+      {isHostOffline && (
+        <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-xl flex items-center justify-center p-6">
+          <div className="glass-card rounded-3xl p-8 max-w-md w-full text-center space-y-4 border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.7)] animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shadow-[0_0_20px_rgba(245,158,11,0.2)]">
+              <Tv className="w-7 h-7" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-white">Host Master Inactive / Paused</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Playback on this screen has been automatically suspended because the Host app was paused, closed, or heartbeat timed out.
+              </p>
+            </div>
+            <div className="pt-2 flex items-center justify-center gap-2 text-xs font-mono text-cyan-300 bg-white/[0.05] p-2.5 rounded-xl border border-white/10">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              <span>Waiting for Host signal...</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="absolute top-4 right-4 flex items-center gap-2">
         <button
           onClick={toggleFullscreen}
-          className="p-2 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800"
+          className="p-2.5 rounded-2xl glass-hud text-slate-300 hover:text-white hover:border-white/30 transition-all border border-white/10 shadow-lg cursor-pointer"
           title="Toggle Immersive Fullscreen"
         >
           {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}

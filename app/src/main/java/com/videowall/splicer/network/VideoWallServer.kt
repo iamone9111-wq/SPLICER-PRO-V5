@@ -32,7 +32,8 @@ class VideoWallServer(
     private val port: Int = 8988,
     private val onClientConnected: (clientCount: Int, clientIp: String) -> Unit,
     private val onClientDisconnected: (clientCount: Int) -> Unit,
-    private val onHeartbeatReceived: ((heartbeat: SyncMessage.Heartbeat) -> Unit)? = null
+    private val onHeartbeatReceived: ((heartbeat: SyncMessage.Heartbeat) -> Unit)? = null,
+    var playbackStateProvider: (() -> Pair<Long, Boolean>)? = null
 ) {
     private val tag = "VideoWallServer"
     private var serverSocket: ServerSocket? = null
@@ -94,6 +95,29 @@ class VideoWallServer(
                 }
             } catch (e: Exception) {
                 if (isActive) Log.e(tag, "Server exception: ${e.message}", e)
+            }
+        }
+
+        // Active Master Lockstep Sync Heartbeat Loop (broadcasts position & state every 300ms)
+        serverScope.launch {
+            while (isActive) {
+                delay(300L)
+                if (connectedClients.isNotEmpty()) {
+                    try {
+                        val state = playbackStateProvider?.invoke()
+                        if (state != null) {
+                            val (pos, isPlaying) = state
+                            val tick = SyncMessage.MasterHeartbeat(
+                                masterPositionMs = pos,
+                                isPlaying = isPlaying,
+                                hostElapsedRealtimeMs = SystemClock.elapsedRealtime()
+                            )
+                            connectedClients.forEach { it.sendMessage(tick) }
+                        }
+                    } catch (e: Exception) {
+                        // Suppress transient loop error
+                    }
+                }
             }
         }
     }
@@ -278,8 +302,25 @@ class VideoWallServer(
     fun broadcastPause(currentPositionMs: Long) {
         val message = SyncMessage.Pause(
             currentPositionMs = currentPositionMs,
-            positionMs = currentPositionMs
+            positionMs = currentPositionMs,
+            isHostClosing = false
         )
+        connectedClients.forEach { it.sendMessage(message) }
+    }
+
+    /**
+     * Instantaneous resume command across all screens with zero-seek buffering.
+     */
+    fun broadcastFastResume(resumePositionMs: Long) {
+        val message = SyncMessage.FastResume(resumePositionMs = resumePositionMs)
+        connectedClients.forEach { it.sendMessage(message) }
+    }
+
+    /**
+     * Broadcasts shutdown to all screens so they immediately freeze and pause playback.
+     */
+    fun broadcastHostShutdown() {
+        val message = SyncMessage.HostShutdown(reason = "Host Master closed")
         connectedClients.forEach { it.sendMessage(message) }
     }
 
@@ -291,6 +332,9 @@ class VideoWallServer(
     }
 
     fun stop() {
+        try {
+            broadcastHostShutdown()
+        } catch (e: Exception) {}
         serverScope.cancel()
         connectedClients.forEach { it.close() }
         connectedClients.clear()

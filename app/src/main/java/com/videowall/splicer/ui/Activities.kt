@@ -383,7 +383,12 @@ class HostActivity : AppCompatActivity() {
                     Toast.makeText(this@HostActivity, "📱 Client disconnected. Active screens: $totalScreens", Toast.LENGTH_SHORT).show()
                 }
             },
-            onHeartbeatReceived = { /* no-op */ }
+            onHeartbeatReceived = { /* no-op */ },
+            playbackStateProvider = {
+                val pos = syncController?.currentPositionMs ?: 0L
+                val isPlaying = syncController?.isPlaying() == true
+                pos to isPlaying
+            }
         ).apply { start() }
 
         setupControls()
@@ -697,9 +702,9 @@ class HostActivity : AppCompatActivity() {
             updatePlayPauseButtonStates(false)
         } else {
             val resumePos = syncController?.currentPositionMs ?: 0L
-            val execTime = SystemClock.elapsedRealtime() + 30L
-            syncController?.schedulePlay(resumePos, execTime)
-            server?.broadcastPlay(resumePos, execTime, deviceOrientation, bezelPercent, scaleMode)
+            // Zero-latency instant resume without decoder seeks or pipeline delays
+            syncController?.resumeFast()
+            server?.broadcastFastResume(resumePos)
             updatePlayPauseButtonStates(true)
         }
     }
@@ -1064,10 +1069,11 @@ class ClientActivity : AppCompatActivity() {
             },
             onDisconnected = {
                 runOnUiThread {
+                    syncController?.pause()
                     setScreenAwake(false)
                     binding.cardConnectionError.visibility = View.VISIBLE
-                    binding.tvErrorMessage.text = "Disconnected from Host. Check Wi-Fi or Host status."
-                    binding.tvScreenIndex.text = "Disconnected from Host"
+                    binding.tvErrorMessage.text = "Disconnected from Host. Playback halted to protect sync."
+                    binding.tvScreenIndex.text = "Host Disconnected"
                 }
             },
             onRoleAssigned = { role ->
@@ -1133,9 +1139,9 @@ class ClientActivity : AppCompatActivity() {
                     }
                 }
             },
-            onPause = { pausePositionMs ->
+            onPause = { _ ->
                 runOnUiThread {
-                    syncController?.pauseAndSeek(pausePositionMs)
+                    syncController?.pause()
                     binding.layoutClientStatus.visibility = View.VISIBLE
                 }
             },
@@ -1153,6 +1159,50 @@ class ClientActivity : AppCompatActivity() {
                     binding.identifyOverlay.visibility = View.VISIBLE
                     binding.identifyOverlay.removeCallbacks(hideClientIdentifyRunnable)
                     binding.identifyOverlay.postDelayed(hideClientIdentifyRunnable, durationMs)
+                }
+            },
+            onMasterHeartbeat = { masterPos, isPlaying ->
+                runOnUiThread {
+                    if (!isPlaying) {
+                        if (syncController?.isPlaying() == true) {
+                            syncController?.pause()
+                            binding.layoutClientStatus.visibility = View.VISIBLE
+                        }
+                    } else {
+                        if (syncController?.isPlaying() != true) {
+                            syncController?.resumeFast()
+                            binding.layoutClientStatus.visibility = View.GONE
+                        }
+                        syncController?.correctDrift(masterPos)
+                    }
+                    val drift = (syncController?.currentPositionMs ?: 0L) - masterPos
+                    binding.tvSyncTelemetry.text = "Locked | Drift: ${drift}ms"
+                }
+            },
+            onHostShutdown = {
+                runOnUiThread {
+                    syncController?.pause()
+                    setScreenAwake(false)
+                    binding.cardConnectionError.visibility = View.VISIBLE
+                    binding.tvErrorMessage.text = "Host Master app was closed or stopped. Playback frozen."
+                    binding.tvScreenIndex.text = "Host Offline"
+                }
+            },
+            onFastResume = { resumePos ->
+                runOnUiThread {
+                    binding.cardConnectionError.visibility = View.GONE
+                    setScreenAwake(true)
+                    syncController?.resumeFast()
+                    binding.layoutClientStatus.visibility = View.GONE
+                }
+            },
+            onHostTimeout = {
+                runOnUiThread {
+                    syncController?.pause()
+                    setScreenAwake(false)
+                    binding.cardConnectionError.visibility = View.VISIBLE
+                    binding.tvErrorMessage.text = "Host heartbeat lost (>2.5s). Playback paused to prevent independent play."
+                    binding.tvScreenIndex.text = "Host Signal Lost"
                 }
             }
         ).apply { connect() }
@@ -1198,6 +1248,11 @@ class ClientActivity : AppCompatActivity() {
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_FULLSCREEN
         )
+    }
+
+    override fun onPause() {
+        super.onPause()
+        syncController?.pause()
     }
 
     override fun onDestroy() {
