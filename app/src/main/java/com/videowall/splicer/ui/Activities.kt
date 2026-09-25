@@ -760,11 +760,11 @@ class HostActivity : AppCompatActivity() {
         // Ensure latest geometry and media preparation reach all screens before scheduling play
         broadcastConfiguration()
 
-        // Resume from current position in real-time with ultra-low 30ms execution epoch
+        // Resume from current position in real-time with true 0ms latency execution epoch
         val resumePos = syncController?.currentPositionMs ?: 0L
-        val executionEpoch = SystemClock.elapsedRealtime() + 30L
-        syncController?.schedulePlay(resumePos, executionEpoch)
-        server?.broadcastPlay(resumePos, executionEpoch, deviceOrientation, bezelPercent, scaleMode)
+        val now = SystemClock.elapsedRealtime()
+        syncController?.schedulePlay(resumePos, now)
+        server?.broadcastPlay(resumePos, now, deviceOrientation, bezelPercent, scaleMode)
         updatePlayPauseButtonStates(true)
         binding.hostTextureView.post {
             updateMatrix()
@@ -1003,6 +1003,8 @@ class ClientActivity : AppCompatActivity() {
                     currentRole?.let { applyMatrix(it) }
                 }
             }
+        }.apply {
+            setVolume(0f) // Mute audio on client screens: eliminates Android AudioTrack hardware latency and multi-screen echo
         }
 
         setupErrorCardButtons()
@@ -1192,7 +1194,7 @@ class ClientActivity : AppCompatActivity() {
                 runOnUiThread {
                     binding.cardConnectionError.visibility = View.GONE
                     setScreenAwake(true)
-                    syncController?.resumeFast()
+                    syncController?.resumeFast(resumePos)
                     binding.layoutClientStatus.visibility = View.GONE
                 }
             },

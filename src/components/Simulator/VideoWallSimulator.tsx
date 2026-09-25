@@ -85,6 +85,8 @@ export const VideoWallSimulator: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasPatternRef = useRef<HTMLCanvasElement | null>(null);
   const broadcastBusRef = useRef<VideoWallBroadcastBus | null>(null);
+  const masterPlayStartTimeRef = useRef<number>(Date.now());
+  const masterPlayStartPositionMsRef = useRef<number>(0);
 
   // Client device telemetry state
   const [devices, setDevices] = useState<ClientDevice[]>([]);
@@ -93,34 +95,43 @@ export const VideoWallSimulator: React.FC = () => {
   useEffect(() => {
     broadcastBusRef.current = new VideoWallBroadcastBus((data) => {
       if (data.type === 'REQUEST_STATE') {
+        const now = Date.now();
+        const curMs = isPlaying
+          ? (masterPlayStartPositionMsRef.current + (now - masterPlayStartTimeRef.current)) % ((duration || 60) * 1000)
+          : currentTime * 1000;
         broadcastBusRef.current?.broadcast({
           type: 'CURRENT_STATE',
           isPlaying,
-          currentTime,
+          currentTime: curMs / 1000,
           orientation,
           totalDevices,
-          selectedVideoId
+          selectedVideoId,
+          timestamp: now
         });
       }
     });
 
-    // Periodic Master Clock Tick (every 400ms while host is active)
+    // Periodic Master Clock Tick (every 250ms while host is active) with high-precision timestamp
     const tickInterval = setInterval(() => {
       if (pageMode === 'host_settings') {
+        const now = Date.now();
+        const curPosMs = isPlaying
+          ? (masterPlayStartPositionMsRef.current + (now - masterPlayStartTimeRef.current)) % ((duration || 60) * 1000)
+          : currentTime * 1000;
         broadcastBusRef.current?.broadcast({
           type: 'MASTER_HEARTBEAT',
           isPlaying,
-          positionMs: currentTime * 1000,
-          timestamp: Date.now()
+          positionMs: curPosMs,
+          timestamp: now
         });
       }
-    }, 400);
+    }, 250);
 
     return () => {
       clearInterval(tickInterval);
       broadcastBusRef.current?.close();
     };
-  }, [isPlaying, currentTime, orientation, totalDevices, selectedVideoId, pageMode]);
+  }, [isPlaying, currentTime, duration, orientation, totalDevices, selectedVideoId, pageMode]);
 
   // Broadcast shutdown when host exits host mode
   useEffect(() => {
@@ -448,8 +459,19 @@ export const VideoWallSimulator: React.FC = () => {
       ctx.arc(w / 2, h / 2, 350, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Animated Sweeping Laser Line
-      const angle = (now / 1000) * Math.PI;
+      // Large Millisecond Synchronization Clock in Center - driven continuously without jitter
+      const nowMs = Date.now();
+      let currentTimeMs = masterPlayStartPositionMsRef.current;
+      if (isPlaying) {
+        if (selectedVideoId === 'test-pattern') {
+          currentTimeMs = (masterPlayStartPositionMsRef.current + (nowMs - masterPlayStartTimeRef.current)) % ((duration || 60) * 1000);
+        } else if (videoRef.current) {
+          currentTimeMs = videoRef.current.currentTime * 1000;
+        }
+      }
+
+      // Animated Sweeping Laser Line (phase-locked to master playback clock)
+      const angle = (currentTimeMs / 1000) * Math.PI;
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -457,9 +479,11 @@ export const VideoWallSimulator: React.FC = () => {
       ctx.lineTo(w / 2 + Math.cos(angle) * 350, h / 2 + Math.sin(angle) * 350);
       ctx.stroke();
 
-      // Horizontal bouncing crosshair ball to clearly verify cross-screen seamless alignment
-      ballX += ballSpeed;
-      if (ballX > w - 50 || ballX < 50) ballSpeed = -ballSpeed;
+      // Deterministic bouncing ball synchronized across all screens without spatial drift
+      const cycleMs = 4000;
+      const progress = (currentTimeMs % cycleMs) / cycleMs;
+      const tri = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+      const ballX = 50 + tri * (w - 100);
       ctx.fillStyle = '#10b981';
       ctx.beginPath();
       ctx.arc(ballX, h / 2, 22, 0, Math.PI * 2);
@@ -468,8 +492,6 @@ export const VideoWallSimulator: React.FC = () => {
       ctx.lineWidth = 3;
       ctx.stroke();
 
-      // Large Millisecond Synchronization Clock in Center
-      const currentTimeMs = isPlaying ? currentTime * 1000 + (now % 1000) : currentTime * 1000;
       const totalSec = Math.floor(currentTimeMs / 1000);
       const ms = Math.floor(currentTimeMs % 1000);
       const clockStr = `${Math.floor(totalSec / 60)
@@ -505,38 +527,53 @@ export const VideoWallSimulator: React.FC = () => {
 
     renderPattern();
     return () => cancelAnimationFrame(frameId);
-  }, [isPlaying, currentTime, effectiveRows, effectiveCols, aspectRatioMode, scaleMode]);
+  }, [isPlaying, currentTime, duration, selectedVideoId, effectiveRows, effectiveCols, aspectRatioMode, scaleMode]);
 
-  // Video playback time progression for calibration test reel
+  // Video playback time progression for calibration test reel UI slider
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isPlaying && selectedVideoId === 'test-pattern') {
       interval = setInterval(() => {
-        setCurrentTime((prev) => {
-          if (prev >= duration) {
-            return 0;
-          }
-          return prev + 0.1;
-        });
-      }, 100);
+        const now = Date.now();
+        const curMs = (masterPlayStartPositionMsRef.current + (now - masterPlayStartTimeRef.current)) % ((duration || 60) * 1000);
+        setCurrentTime(curMs / 1000);
+      }, 200);
     }
     return () => clearInterval(interval);
   }, [isPlaying, duration, selectedVideoId]);
 
   // Real-time zero-latency Play / Pause
   const handleTogglePlay = () => {
+    const now = Date.now();
     if (!isPlaying) {
+      masterPlayStartTimeRef.current = now;
+      masterPlayStartPositionMsRef.current = currentTime * 1000;
       setIsPlaying(true);
       setScheduledCountdown(null);
       if (videoRef.current && selectedVideoId !== 'test-pattern') {
         videoRef.current.play().catch(() => {});
       }
       broadcastBusRef.current?.broadcast({
+        type: 'FAST_RESUME',
+        startPositionMs: masterPlayStartPositionMsRef.current,
+        timestamp: now
+      });
+      broadcastBusRef.current?.broadcast({
         type: 'SCHEDULED_PLAY',
-        startPositionMs: currentTime * 1000,
-        targetSystemTimeMs: Date.now()
+        startPositionMs: masterPlayStartPositionMsRef.current,
+        timestamp: now,
+        targetSystemTimeMs: now
       });
     } else {
+      let currentPosMs = masterPlayStartPositionMsRef.current;
+      if (selectedVideoId === 'test-pattern') {
+        const elapsed = now - masterPlayStartTimeRef.current;
+        currentPosMs = (masterPlayStartPositionMsRef.current + elapsed) % ((duration || 60) * 1000);
+      } else if (videoRef.current) {
+        currentPosMs = videoRef.current.currentTime * 1000;
+      }
+      masterPlayStartPositionMsRef.current = currentPosMs;
+      setCurrentTime(currentPosMs / 1000);
       setIsPlaying(false);
       setScheduledCountdown(null);
       if (videoRef.current) {
@@ -544,30 +581,39 @@ export const VideoWallSimulator: React.FC = () => {
       }
       broadcastBusRef.current?.broadcast({
         type: 'PAUSE',
-        currentPositionMs: currentTime * 1000
+        currentPositionMs: currentPosMs,
+        timestamp: now
       });
     }
   };
 
   const handleRestart = () => {
+    const now = Date.now();
+    masterPlayStartTimeRef.current = now;
+    masterPlayStartPositionMsRef.current = 0;
     setCurrentTime(0);
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
     }
     broadcastBusRef.current?.broadcast({
       type: 'SEEK',
-      targetPositionMs: 0
+      targetPositionMs: 0,
+      timestamp: now
     });
   };
 
   const handleSeek = (time: number) => {
+    const now = Date.now();
+    masterPlayStartTimeRef.current = now;
+    masterPlayStartPositionMsRef.current = time * 1000;
     setCurrentTime(time);
     if (videoRef.current) {
       videoRef.current.currentTime = time;
     }
     broadcastBusRef.current?.broadcast({
       type: 'SEEK',
-      targetPositionMs: time * 1000
+      targetPositionMs: time * 1000,
+      timestamp: now
     });
   };
 

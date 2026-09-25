@@ -134,7 +134,8 @@ sealed class SyncMessage {
     @Serializable
     @SerialName("FAST_RESUME")
     data class FastResume(
-        val resumePositionMs: Long = 0L
+        val resumePositionMs: Long = 0L,
+        val hostElapsedRealtimeMs: Long = 0L
     ) : SyncMessage()
 
     /**

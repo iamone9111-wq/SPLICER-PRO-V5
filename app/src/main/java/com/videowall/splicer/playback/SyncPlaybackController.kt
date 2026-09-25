@@ -30,24 +30,32 @@ class SyncPlaybackController(
     }
 
     private fun initExoPlayer() {
-        // Fast start & zero-latency resume buffer configuration:
-        // 200ms bufferForPlayback allows instantaneous start without waiting
+        // True 0-latency playback renderer & buffer configuration:
+        // setAllowedVideoJoiningTimeMs(0L) disables video renderer grace delay so first frame renders immediately
+        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context).apply {
+            setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+            setAllowedVideoJoiningTimeMs(0L)
+            setEnableDecoderFallback(true)
+        }
+
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                1000, // minBufferMs (1.0s)
-                4000, // maxBufferMs (4.0s)
-                200,  // bufferForPlaybackMs (0.2s - instant playback start)
-                400   // bufferForPlaybackAfterRebufferMs (0.4s)
+                200,  // minBufferMs (0.2s - instant startup)
+                1500, // maxBufferMs (1.5s)
+                0,    // bufferForPlaybackMs (0ms - zero latency instant start)
+                25    // bufferForPlaybackAfterRebufferMs (25ms)
             )
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(1000, false)
+            .setBackBuffer(200, false)
             .build()
 
-        exoPlayer = ExoPlayer.Builder(context)
+        exoPlayer = ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(loadControl)
+            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
             .build()
             .apply {
                 setVideoTextureView(textureView)
+                videoScalingMode = androidx.media3.common.C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                 addListener(object : Player.Listener {
                     override fun onVideoSizeChanged(videoSize: VideoSize) {
                         val rotation = videoSize.unappliedRotationDegrees
@@ -73,7 +81,7 @@ class SyncPlaybackController(
                         // Auto-retry once on network or transient error
                         currentUri?.let { uri ->
                             controllerScope.launch {
-                                delay(600L)
+                                delay(400L)
                                 Log.d(tag, "Retrying media preparation after error: $uri")
                                 prepareMedia(uri, force = true)
                             }
@@ -101,44 +109,40 @@ class SyncPlaybackController(
     }
 
     /**
-     * Schedules the player to begin playback from [startPositionMs] at [localExecutionTimeMs].
-     * Zero-latency: avoid redundant seeks which flush ExoPlayer decoder buffers.
+     * Schedules playback with 0 latency. Executes immediately on the current UI frame without coroutine delays.
      */
-    fun schedulePlay(startPositionMs: Long, localExecutionTimeMs: Long) {
+    fun schedulePlay(startPositionMs: Long, localExecutionTimeMs: Long = 0L) {
         scheduledPlayJob?.cancel()
         
-        scheduledPlayJob = controllerScope.launch {
-            val now = SystemClock.elapsedRealtime()
-            val waitDurationMs = localExecutionTimeMs - now
-
-            // If player is idle or unbuffered, prepare it
-            if (exoPlayer?.playbackState == Player.STATE_IDLE) {
-                currentUri?.let { prepareMedia(it) } ?: exoPlayer?.prepare()
-            }
-
-            // Only seek if deviation is substantial (> 800ms).
-            // Avoiding redundant seek prevents discarding the decoded video frame buffer!
-            val curPos = exoPlayer?.currentPosition ?: 0L
-            if (Math.abs(curPos - startPositionMs) > 800L) {
-                exoPlayer?.seekTo(startPositionMs)
-            }
-
-            if (waitDurationMs in 1..25) {
-                delay(waitDurationMs)
-            }
-
-            exoPlayer?.playWhenReady = true
-            exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
+        // If player is idle or unbuffered, prepare it immediately
+        if (exoPlayer?.playbackState == Player.STATE_IDLE) {
+            currentUri?.let { prepareMedia(it) } ?: exoPlayer?.prepare()
         }
+
+        // Only seek if deviation is substantial (> 1000ms) to avoid clearing decoded video frame buffers
+        val curPos = exoPlayer?.currentPosition ?: 0L
+        if (Math.abs(curPos - startPositionMs) > 1000L) {
+            exoPlayer?.seekTo(startPositionMs)
+        }
+
+        // True 0-latency execution: immediately unpause ExoPlayer
+        exoPlayer?.playWhenReady = true
+        exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
     }
 
     /**
      * Instantaneous zero-latency resume without seeking or buffer pipeline flush.
      */
-    fun resumeFast() {
+    fun resumeFast(targetPositionMs: Long? = null) {
         scheduledPlayJob?.cancel()
         if (exoPlayer?.playbackState == Player.STATE_IDLE) {
             currentUri?.let { prepareMedia(it) } ?: exoPlayer?.prepare()
+        }
+        if (targetPositionMs != null) {
+            val cur = exoPlayer?.currentPosition ?: 0L
+            if (Math.abs(cur - targetPositionMs) > 1000L) {
+                exoPlayer?.seekTo(targetPositionMs)
+            }
         }
         exoPlayer?.playWhenReady = true
         exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
@@ -158,7 +162,7 @@ class SyncPlaybackController(
         exoPlayer?.playWhenReady = false
         if (positionMs >= 0) {
             val cur = exoPlayer?.currentPosition ?: 0L
-            if (Math.abs(cur - positionMs) > 800L) {
+            if (Math.abs(cur - positionMs) > 1000L) {
                 exoPlayer?.seekTo(positionMs)
             }
         }
@@ -181,34 +185,47 @@ class SyncPlaybackController(
     }
 
     /**
-     * Micro-drift watchdog: Adjusts playback speed smoothly if drift is small (<250ms)
-     * or performs a hard seek if drift is large (>300ms).
+     * Micro-drift watchdog: Adjusts playback speed smoothly without stuttering seeks.
+     * Uses micro-tempo adjustments (0.95x - 1.05x) for deviations under 1000ms.
+     * Hard seeks are strictly avoided unless deviation is catastrophic (>1000ms).
      */
     fun correctDrift(masterPositionMs: Long) {
         val current = exoPlayer?.currentPosition ?: return
         val driftMs = current - masterPositionMs
 
         when {
-            driftMs > 300 || driftMs < -300 -> {
-                // Large drift: Hard seek
+            driftMs > 1000 || driftMs < -1000 -> {
+                // Catastrophic drift only: Hard seek
                 exoPlayer?.seekTo(masterPositionMs)
                 exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
             }
-            driftMs > 30 -> {
-                // Client is slightly ahead: gently slow down to 0.96x
-                exoPlayer?.playbackParameters = PlaybackParameters(0.96f)
+            driftMs > 80 -> {
+                // Client is noticeably ahead: gently slow down to 0.95x
+                exoPlayer?.playbackParameters = PlaybackParameters(0.95f)
             }
-            driftMs < -30 -> {
-                // Client is slightly behind: gently speed up to 1.04x
-                exoPlayer?.playbackParameters = PlaybackParameters(1.04f)
+            driftMs > 25 -> {
+                // Client is slightly ahead: micro-slowdown to 0.98x
+                exoPlayer?.playbackParameters = PlaybackParameters(0.98f)
+            }
+            driftMs < -80 -> {
+                // Client is noticeably behind: gently speed up to 1.05x
+                exoPlayer?.playbackParameters = PlaybackParameters(1.05f)
+            }
+            driftMs < -25 -> {
+                // Client is slightly behind: micro-speedup to 1.02x
+                exoPlayer?.playbackParameters = PlaybackParameters(1.02f)
             }
             else -> {
-                // Synchronized within tight tolerance (<30ms)
+                // Tight sync within tight ±25ms tolerance: run normal 1.0x
                 if (exoPlayer?.playbackParameters?.speed != 1.0f) {
                     exoPlayer?.playbackParameters = PlaybackParameters(1.0f)
                 }
             }
         }
+    }
+
+    fun setVolume(volume: Float) {
+        exoPlayer?.volume = volume
     }
 
     fun isPlaying(): Boolean {

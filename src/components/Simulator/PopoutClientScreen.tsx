@@ -34,6 +34,8 @@ export const PopoutClientScreen: React.FC<PopoutClientScreenProps> = ({
   const [isHostOffline, setIsHostOffline] = useState<boolean>(false);
   const [lastHeartbeatTime, setLastHeartbeatTime] = useState<number>(Date.now());
   const broadcastBusRef = useRef<VideoWallBroadcastBus | null>(null);
+  const basePositionMsRef = useRef<number>(0);
+  const baseTimestampRef = useRef<number>(Date.now());
 
   useEffect(() => {
     broadcastBusRef.current = new VideoWallBroadcastBus((data) => {
@@ -42,19 +44,32 @@ export const PopoutClientScreen: React.FC<PopoutClientScreenProps> = ({
 
       if (data.type === 'SCHEDULED_PLAY' || data.type === 'FAST_RESUME') {
         setIsPlaying(true);
-        setCurrentTimeMs(data.startPositionMs || 0);
+        basePositionMsRef.current = data.startPositionMs || 0;
+        baseTimestampRef.current = data.timestamp || Date.now();
+        setCurrentTimeMs(basePositionMsRef.current);
       } else if (data.type === 'PAUSE') {
         setIsPlaying(false);
-        setCurrentTimeMs(data.currentPositionMs || 0);
+        basePositionMsRef.current = data.currentPositionMs || 0;
+        baseTimestampRef.current = data.timestamp || Date.now();
+        setCurrentTimeMs(basePositionMsRef.current);
       } else if (data.type === 'SEEK') {
-        setCurrentTimeMs(data.targetPositionMs || 0);
+        basePositionMsRef.current = data.targetPositionMs || 0;
+        baseTimestampRef.current = data.timestamp || Date.now();
+        setCurrentTimeMs(basePositionMsRef.current);
       } else if (data.type === 'HOST_SHUTDOWN') {
         setIsPlaying(false);
         setIsHostOffline(true);
       } else if (data.type === 'MASTER_HEARTBEAT') {
         setIsPlaying(data.isPlaying);
         if (data.positionMs !== undefined) {
-          setCurrentTimeMs(data.positionMs);
+          const now = Date.now();
+          const expected = basePositionMsRef.current + (now - baseTimestampRef.current);
+          const drift = Math.abs(expected - data.positionMs);
+          if (drift > 80 || !data.isPlaying) {
+            basePositionMsRef.current = data.positionMs;
+            baseTimestampRef.current = data.timestamp || now;
+            setCurrentTimeMs(data.positionMs);
+          }
         }
       }
     });
@@ -178,9 +193,36 @@ export const PopoutClientScreen: React.FC<PopoutClientScreenProps> = ({
       ctx.arc(w / 2, h / 2, 200, 0, Math.PI * 2);
       ctx.stroke();
 
-      const msClock = Math.floor(currentTimeMs + (isPlaying ? now % 1000 : 0));
-      const sec = Math.floor(msClock / 1000);
-      const subMs = Math.floor(msClock % 1000);
+      // Exact monotonic wall playback time (0ms latency, zero drift)
+      const nowMs = Date.now();
+      const currentMs = isPlaying
+        ? (basePositionMsRef.current + (nowMs - baseTimestampRef.current)) % (60 * 1000)
+        : basePositionMsRef.current;
+
+      // Synchronized Sweeping Laser Line (phase-locked across all screens)
+      const angle = (currentMs / 1000) * Math.PI;
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(w / 2, h / 2);
+      ctx.lineTo(w / 2 + Math.cos(angle) * 350, h / 2 + Math.sin(angle) * 350);
+      ctx.stroke();
+
+      // Deterministic bouncing ball synchronized spatially across virtual wall canvas
+      const cycleMs = 4000;
+      const progress = (currentMs % cycleMs) / cycleMs;
+      const tri = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+      const ballX = 50 + tri * (w - 100);
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.arc(ballX, h / 2, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      const sec = Math.floor(currentMs / 1000);
+      const subMs = Math.floor(currentMs % 1000);
       const str = `${Math.floor(sec / 60)
         .toString()
         .padStart(2, '0')}:${(sec % 60).toString().padStart(2, '0')}.${subMs.toString().padStart(3, '0')}`;

@@ -262,20 +262,6 @@ class VideoWallServer(
         bezelPercent: Float = this.bezelPercent,
         scaleMode: ScaleMode = this.currentScaleMode
     ) {
-        // Ensure every client has media prepared before scheduling play
-        currentMediaUri?.let { uri ->
-            connectedClients.forEach { client ->
-                client.sendMessage(
-                    SyncMessage.PrepareMedia(
-                        mediaUri = uri,
-                        videoWidth = videoWidth,
-                        videoHeight = videoHeight,
-                        durationMs = 0L
-                    )
-                )
-            }
-        }
-
         val message = SyncMessage.SchedulePlay(
             startPositionMs = startPositionMs,
             targetSystemTimeMs = targetTimeEpochMs,
@@ -289,7 +275,7 @@ class VideoWallServer(
 
     fun broadcastSchedulePlay(
         startPositionMs: Long,
-        executionDelayMs: Long = 30L,
+        executionDelayMs: Long = 0L,
         deviceOrientation: DeviceOrientation = this.deviceOrientation,
         bezelPercent: Float = this.bezelPercent,
         scaleMode: ScaleMode = this.currentScaleMode
@@ -309,10 +295,13 @@ class VideoWallServer(
     }
 
     /**
-     * Instantaneous resume command across all screens with zero-seek buffering.
+     * Instantaneous zero-latency resume command across all screens with exact Host elapsed epoch timestamp.
      */
     fun broadcastFastResume(resumePositionMs: Long) {
-        val message = SyncMessage.FastResume(resumePositionMs = resumePositionMs)
+        val message = SyncMessage.FastResume(
+            resumePositionMs = resumePositionMs,
+            hostElapsedRealtimeMs = SystemClock.elapsedRealtime()
+        )
         connectedClients.forEach { it.sendMessage(message) }
     }
 
@@ -324,7 +313,7 @@ class VideoWallServer(
         connectedClients.forEach { it.sendMessage(message) }
     }
 
-    fun broadcastSeek(targetPositionMs: Long, executionDelayMs: Long = 30L): Long {
+    fun broadcastSeek(targetPositionMs: Long, executionDelayMs: Long = 0L): Long {
         val targetSystemTimeMs = SystemClock.elapsedRealtime() + executionDelayMs
         val message = SyncMessage.Seek(targetPositionMs, targetSystemTimeMs)
         connectedClients.forEach { it.sendMessage(message) }
@@ -352,6 +341,10 @@ class VideoWallServer(
             clientJob = serverScope.launch {
                 try {
                     socket.tcpNoDelay = true
+                    try {
+                        socket.trafficClass = 0x10 // IPTOS_LOWDELAY for zero latency
+                        socket.sendBufferSize = 64 * 1024
+                    } catch (e: Exception) {}
                     writer = PrintWriter(socket.getOutputStream(), true)
                     reader = BufferedReader(InputStreamReader(socket.getInputStream()))
 

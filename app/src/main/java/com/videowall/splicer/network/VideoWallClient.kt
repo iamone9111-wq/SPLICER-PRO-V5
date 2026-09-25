@@ -171,14 +171,30 @@ class VideoWallClient(
                     onMediaPrepared(message)
                 }
                 is SyncMessage.SchedulePlay -> {
+                    val localNow = SystemClock.elapsedRealtime()
+                    val hostNowEstimated = localNow + clockOffsetMs
+                    val transitDelay = (hostNowEstimated - message.hostExecutionEpochMs).coerceAtLeast(0L)
+                    val realStartPos = message.startPositionMs + transitDelay
                     val localExecTime = message.hostExecutionEpochMs - clockOffsetMs
-                    onPlayScheduled(message.startPositionMs, localExecTime, message.deviceOrientation, message.bezelPercent, message.scaleMode)
+                    onPlayScheduled(realStartPos, localExecTime, message.deviceOrientation, message.bezelPercent, message.scaleMode)
                 }
                 is SyncMessage.FastResume -> {
-                    onFastResume?.invoke(message.resumePositionMs)
+                    val localNow = SystemClock.elapsedRealtime()
+                    val hostNowEstimated = localNow + clockOffsetMs
+                    val transitDelay = (hostNowEstimated - message.hostElapsedRealtimeMs).coerceAtLeast(0L)
+                    val realResumePos = message.resumePositionMs + transitDelay
+                    onFastResume?.invoke(realResumePos)
                 }
                 is SyncMessage.MasterHeartbeat -> {
-                    onMasterHeartbeat?.invoke(message.masterPositionMs, message.isPlaying)
+                    val localNow = SystemClock.elapsedRealtime()
+                    val hostNowEstimated = localNow + clockOffsetMs
+                    val transitDelay = (hostNowEstimated - message.hostElapsedRealtimeMs).coerceAtLeast(0L)
+                    val realMasterPos = if (message.isPlaying) {
+                        message.masterPositionMs + transitDelay
+                    } else {
+                        message.masterPositionMs
+                    }
+                    onMasterHeartbeat?.invoke(realMasterPos, message.isPlaying)
                 }
                 is SyncMessage.HostShutdown -> {
                     onHostShutdown?.invoke()
